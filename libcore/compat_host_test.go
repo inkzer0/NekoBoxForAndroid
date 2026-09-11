@@ -306,12 +306,12 @@ func TestCustomLegacyConfigStillRejected(t *testing.T) {
 	}
 }
 
-func TestDNSBaselineSuccessCallbackUnchanged(t *testing.T) {
+func TestDNSBaselineSuccessCallbackCompletes(t *testing.T) {
 	called := false
 	c := ExchangeContext{done: func() { called = true }}
 	c.Success("127.0.0.1")
-	if called || len(c.addresses) != 1 {
-		t.Fatal("baseline successful callback behavior changed")
+	if !called || len(c.addresses) != 1 {
+		t.Fatal("successful callback must publish addresses and complete")
 	}
 }
 

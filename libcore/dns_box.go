@@ -83,6 +83,8 @@ func (p *platformLocalDNSTransport) Exchange(ctx context.Context, message *mDNS.
 		return responseMessage, nil
 	} else {
 		// Lookup - Android 10 以下
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel() // Release cancellation listeners even after Lookup errors.
 
 		question := message.Question[0]
 		var network string
@@ -97,7 +99,8 @@ func (p *platformLocalDNSTransport) Exchange(ctx context.Context, message *mDNS.
 
 		done := make(chan struct{})
 		response := &ExchangeContext{
-			context: ctx,
+			context:  ctx,
+			finished: done,
 			done: sync.OnceFunc(func() {
 				close(done)
 			}),
@@ -113,7 +116,7 @@ func (p *platformLocalDNSTransport) Exchange(ctx context.Context, message *mDNS.
 			select {
 			case <-done:
 			case <-ctx.Done():
-				return context.Canceled
+				return response.context.Err()
 			}
 			if response.error != nil {
 				return response.error
@@ -139,37 +142,56 @@ type ExchangeContext struct {
 	addresses []netip.Addr
 	error     error
 	done      func()
+	completed sync.Once
+	finished  <-chan struct{}
 }
 
 func (c *ExchangeContext) OnCancel(callback Func) {
 	go func() {
-		<-c.context.Done()
-		callback.Invoke()
+		select {
+		case <-c.context.Done():
+			select {
+			case <-c.finished:
+				return
+			default:
+			}
+			callback.Invoke()
+		case <-c.finished:
+		}
 	}()
 }
 
 func (c *ExchangeContext) Success(result string) {
-	c.addresses = common.Map(common.Filter(strings.Split(result, "\n"), func(it string) bool {
-		return !common.IsEmpty(it)
-	}), func(it string) netip.Addr {
-		return M.ParseSocksaddrHostPort(it, 0).Unwrap().Addr
+	c.completed.Do(func() {
+		c.addresses = common.Map(common.Filter(strings.Split(result, "\n"), func(it string) bool {
+			return !common.IsEmpty(it)
+		}), func(it string) netip.Addr {
+			return M.ParseSocksaddrHostPort(it, 0).Unwrap().Addr
+		})
+		c.done()
 	})
 }
 
 func (c *ExchangeContext) RawSuccess(result []byte) {
-	err := c.message.Unpack(result)
-	if err != nil {
-		c.error = E.Cause(err, "parse response")
-	}
-	c.done()
+	c.completed.Do(func() {
+		err := c.message.Unpack(result)
+		if err != nil {
+			c.error = E.Cause(err, "parse response")
+		}
+		c.done()
+	})
 }
 
 func (c *ExchangeContext) ErrorCode(code int32) {
-	c.error = dns.RcodeError(code)
-	c.done()
+	c.completed.Do(func() {
+		c.error = dns.RcodeError(code)
+		c.done()
+	})
 }
 
 func (c *ExchangeContext) ErrnoCode(code int32) {
-	c.error = syscall.Errno(code)
-	c.done()
+	c.completed.Do(func() {
+		c.error = syscall.Errno(code)
+		c.done()
+	})
 }
