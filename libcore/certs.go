@@ -3,11 +3,14 @@ package libcore
 import (
 	"crypto/x509"
 	"log"
+	"sync/atomic"
 	_ "unsafe" // for go:linkname
 )
 
 //go:linkname systemRoots crypto/x509.systemRoots
 var systemRoots *x509.CertPool
+
+var externalRootPEM atomic.Pointer[string]
 
 func updateRootCACerts(pem []byte) {
 	x509.SystemCertPool()
@@ -17,6 +20,8 @@ func updateRootCACerts(pem []byte) {
 		return
 	}
 	systemRoots = roots
+	value := string(pem)
+	externalRootPEM.Store(&value)
 	log.Println("external ca.pem was loaded")
 }
 

@@ -113,6 +113,8 @@ public class SingBoxOptions {
 
         public List<SingBoxOption> outbounds;
 
+        public List<SingBoxOption> endpoints;
+
         public RouteOptions route;
 
         public ExperimentalOptions experimental;
@@ -328,6 +330,15 @@ public class SingBoxOptions {
     }
 
     public static class DNSServerOptions extends SingBoxOption {
+
+        public String type;
+        public String server;
+        public Integer server_port;
+        public Object domain_resolver;
+        public Object tls;
+        public String path;
+        public String inet4_range;
+        public String inet6_range;
 
         public String tag;
 
@@ -1045,6 +1056,8 @@ public class SingBoxOptions {
     }
 
     public static class RouteOptions extends SingBoxOption {
+
+        public Object default_domain_resolver;
 
         public List<Rule> rules;
 
@@ -2799,6 +2812,10 @@ public class SingBoxOptions {
 
     public static class Inbound_TunOptions extends Inbound {
 
+        public List<String> address;
+        public String udp_mapping;
+        public String udp_filtering;
+
         public String interface_name;
 
         public Integer mtu;
@@ -3851,6 +3868,13 @@ public class SingBoxOptions {
 
     }
 
+    public static class Endpoint_WireGuardOptions extends Outbound {
+        public List<String> address;
+        public String private_key;
+        public Integer mtu;
+        public List<Map<String, Object>> peers;
+    }
+
     public static class Outbound_WireGuardOptions extends Outbound {
 
         // Generate note: nested type DialerOptions
@@ -4383,6 +4407,9 @@ public class SingBoxOptions {
 
     public static class Rule_DefaultOptions extends Rule {
 
+        public String strategy;
+        public Boolean _neko_sniff_override;
+
         // Generate note: Listable
         public List<String> inbound;
 
@@ -4459,6 +4486,10 @@ public class SingBoxOptions {
     }
 
     public static class DNSRule_DefaultOptions extends DNSRule {
+
+        public String action;
+        public String strategy;
+        public String rcode;
 
         // Generate note: Listable
         public List<String> inbound;
