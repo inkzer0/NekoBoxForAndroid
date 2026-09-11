@@ -740,6 +740,7 @@ fun buildConfig(
 
         if (!forTest) _hack_custom_config = DataStore.globalCustomConfig
     }.let {
+        migrateBuiltInConfig(it)
         val configMap = it.asMap()
         Util.mergeJSON(configMap, proxy.requireBean().customConfigJson)
         ConfigBuildResult(
