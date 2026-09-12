@@ -510,7 +510,12 @@ fun buildConfig(
                     makeSingBoxRule(domainList, false)
                 }
                 if (rule.ip.isNotBlank()) {
+                    val domainRuleSets = rule_set.orEmpty()
                     makeSingBoxRule(rule.ip.listByLineOrComma(), true)
+                    // Both converters reset rule_set; retain the domain address alternatives.
+                    if (domainRuleSets.isNotEmpty()) {
+                        rule_set = (domainRuleSets + rule_set.orEmpty()).distinct()
+                    }
                 }
 
                 if (rule_set != null) generateRuleSet(rule_set, ruleSets)
