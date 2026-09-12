@@ -1,0 +1,19 @@
+<resources>
+    <string name="remote_rule_sets">远程规则集</string>
+    <string name="ruleset_add">新增订阅</string>
+    <string name="ruleset_edit">编辑</string>
+    <string name="ruleset_update">立即更新</string>
+    <string name="ruleset_delete">删除订阅</string>
+    <string name="ruleset_enable">启用</string>
+    <string name="ruleset_disable">禁用</string>
+    <string name="ruleset_enabled">已启用</string>
+    <string name="ruleset_disabled">已禁用</string>
+    <string name="ruleset_no_cache">尚无有效缓存，请更新后再连接</string>
+    <string name="ruleset_done">操作完成</string>
+    <string name="ruleset_name">名称</string>
+    <string name="ruleset_tag">唯一标签（字母、数字、. _ -）</string>
+    <string name="ruleset_url">订阅 URL</string>
+    <string name="ruleset_format">格式</string>
+    <string name="ruleset_interval">更新间隔（分钟）</string>
+    <string name="ruleset_notice">固定使用直连网络下载。支持 source JSON / binary SRS，最大 64 MiB。Android 可能推迟定时更新；更新失败保留有效缓存。修改路由后请重新连接。</string>
+</resources>

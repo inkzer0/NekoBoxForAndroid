@@ -15,12 +15,13 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
 @Database(
-    entities = [ProxyGroup::class, ProxyEntity::class, RuleEntity::class],
-    version = 6,
+    entities = [ProxyGroup::class, ProxyEntity::class, RuleEntity::class, RemoteRuleSetEntity::class],
+    version = 7,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5),
-        AutoMigration(from = 5, to = 6)
+        AutoMigration(from = 5, to = 6),
+        AutoMigration(from = 6, to = 7)
     ]
 )
 @TypeConverters(value = [KryoConverters::class, GsonConverters::class])
@@ -45,11 +46,13 @@ abstract class SagerDatabase : RoomDatabase() {
         val groupDao get() = instance.groupDao()
         val proxyDao get() = instance.proxyDao()
         val rulesDao get() = instance.rulesDao()
+        val remoteRuleSetsDao get() = instance.remoteRuleSetsDao()
 
     }
 
     abstract fun groupDao(): ProxyGroup.Dao
     abstract fun proxyDao(): ProxyEntity.Dao
     abstract fun rulesDao(): RuleEntity.Dao
+    abstract fun remoteRuleSetsDao(): RemoteRuleSetEntity.Dao
 
 }

@@ -151,6 +151,12 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
                 })
             }
             if (rule) {
+                put("remoteRuleSets", RemoteRuleSetStore.export(SagerDatabase.remoteRuleSetsDao.all()))
+                put("remoteRuleSetReferences", JSONObject().apply {
+                    SagerDatabase.rulesDao.allRules().forEach {
+                        if (it.remoteRuleSetTags.isNotBlank()) put(it.id.toString(), JSONArray(RemoteRuleSetStore.tags(it.remoteRuleSetTags)))
+                    }
+                })
                 put("rules", JSONArray().apply {
                     SagerDatabase.rulesDao.allRules().forEach {
                         put(it.toBase64Str())
@@ -204,7 +210,8 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
                 it.bufferedReader().readText()
             })
         } catch (e: Exception) {
-            Logs.w(e)
+            // JSON parser errors can embed the backup, including subscription URL tokens.
+            Logs.w("Invalid backup JSON")
             invalid()
             return
         }
@@ -265,6 +272,22 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
     fun finishImport(
         content: JSONObject, profile: Boolean, rule: Boolean, setting: Boolean
     ) {
+        val (remoteSets, parsedReferences) = try {
+            val sets = if (rule && content.has("rules")) {
+                RemoteRuleSetStore.parse(if (content.has("remoteRuleSets")) content.getJSONArray("remoteRuleSets") else null)
+            } else emptyList()
+            val references = if (rule && content.has("remoteRuleSetReferences")) content.getJSONObject("remoteRuleSetReferences") else JSONObject()
+            val parsed = references.keys().asSequence().associateWith { key ->
+                require(key.toLongOrNull() != null)
+                val array = references.getJSONArray(key)
+                (0 until array.length()).map { array.getString(it) }.also { tags ->
+                    require(tags.all { tag -> sets.any { it.tag == tag } })
+                }.joinToString("\n")
+            }
+            sets to parsed
+        } catch (_: Exception) {
+            throw IllegalArgumentException("Invalid remote rule-set backup data")
+        }
         if (profile && content.has("profiles")) {
             val profiles = mutableListOf<ProxyEntity>()
             val jsonProfiles = content.getJSONArray("profiles")
@@ -300,9 +323,11 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
                 val parcel = Parcel.obtain()
                 parcel.unmarshall(data, 0, data.size)
                 parcel.setDataPosition(0)
-                rules.add(ParcelizeBridge.createRule(parcel))
+                rules.add(ParcelizeBridge.createRule(parcel).apply { remoteRuleSetTags = parsedReferences[id.toString()] ?: "" })
                 parcel.recycle()
             }
+            require(parsedReferences.keys.all { id -> rules.any { it.id.toString() == id } }) { "Missing referenced route" }
+            RemoteRuleSetManager.restore(remoteSets)
             SagerDatabase.rulesDao.reset()
             SagerDatabase.rulesDao.insert(rules)
         }

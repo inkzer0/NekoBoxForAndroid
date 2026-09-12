@@ -19,6 +19,7 @@ import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceDataStore
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.MultiSelectListPreference
 import com.github.shadowsocks.plugin.Empty
 import com.github.shadowsocks.plugin.fragment.AlertDialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -74,6 +75,7 @@ class RouteSettingsActivity(
             else -> 3
         }
         DataStore.routePackages = packages.joinToString("\n")
+        DataStore.profileCacheStore.putStringSet("routeRemoteRuleSets", io.nekohasekai.sagernet.database.RemoteRuleSetStore.tags(remoteRuleSetTags).toMutableSet())
     }
 
     fun RuleEntity.serialize() {
@@ -93,6 +95,7 @@ class RouteSettingsActivity(
             else -> DataStore.routeOutboundRule
         }
         packages = DataStore.routePackages.split("\n").filter { it.isNotBlank() }.toSet()
+        remoteRuleSetTags = DataStore.profileCacheStore.getStringSet("routeRemoteRuleSets", mutableSetOf())!!.sorted().joinToString("\n")
 
         if (DataStore.editingId == 0L) {
             enabled = true
@@ -112,6 +115,13 @@ class RouteSettingsActivity(
         addPreferencesFromResource(R.xml.route_preferences)
 
         editConfigPreference = findPreference(Key.SERVER_CONFIG)!!
+        val sets = SagerDatabase.remoteRuleSetsDao.all()
+        val selection = findPreference<MultiSelectListPreference>("routeRemoteRuleSets")!!
+        val selected = DataStore.profileCacheStore.getStringSet("routeRemoteRuleSets", mutableSetOf())!!
+        val tags = (sets.map { it.tag } + selected).distinct()
+        selection.entryValues = tags.toTypedArray()
+        selection.entries = tags.map { tag -> sets.find { it.tag == tag }?.let { "${it.name} ($tag)" } ?: tag }.toTypedArray()
+        selection.summaryProvider = Preference.SummaryProvider<MultiSelectListPreference> { it.values.sorted().joinToString(", ") }
     }
 
     override fun onResume() {

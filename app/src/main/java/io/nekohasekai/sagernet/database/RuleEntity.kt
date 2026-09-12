@@ -5,6 +5,7 @@ import androidx.room.*
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.ktx.app
 import kotlinx.parcelize.Parcelize
+import kotlinx.parcelize.IgnoredOnParcel
 
 @Entity(tableName = "rules")
 @Parcelize
@@ -25,6 +26,10 @@ data class RuleEntity(
     var protocol: String = "",
     var outbound: Long = 0,
     var packages: Set<String> = emptySet(),
+    // Keep the backup v1 Parcel byte layout unchanged; references use an optional JSON block.
+    @IgnoredOnParcel
+    @ColumnInfo(defaultValue = "''")
+    var remoteRuleSetTags: String = "",
 ) : Parcelable {
 
     fun displayName(): String {
@@ -34,6 +39,7 @@ data class RuleEntity(
     fun mkSummary(): String {
         var summary = ""
         if (config.isNotBlank()) summary += "[config]\n"
+        if (remoteRuleSetTags.isNotBlank()) summary += "rule-set: ${remoteRuleSetTags.replace('\n', ',')}\n"
         if (domains.isNotBlank()) summary += "$domains\n"
         if (ip.isNotBlank()) summary += "$ip\n"
         if (source.isNotBlank()) summary += "src ip: $source\n"

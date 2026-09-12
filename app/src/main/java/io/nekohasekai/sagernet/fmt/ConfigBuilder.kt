@@ -7,6 +7,8 @@ import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
 import io.nekohasekai.sagernet.database.ProxyEntity.Companion.TYPE_CONFIG
 import io.nekohasekai.sagernet.database.SagerDatabase
+import io.nekohasekai.sagernet.database.RemoteRuleSetManager
+import io.nekohasekai.sagernet.database.RemoteRuleSetStore
 import io.nekohasekai.sagernet.fmt.ConfigBuildResult.IndexEntity
 import io.nekohasekai.sagernet.fmt.hysteria.HysteriaBean
 import io.nekohasekai.sagernet.fmt.hysteria.buildSingBoxOutboundHysteriaBean
@@ -124,6 +126,7 @@ fun buildConfig(
     }
 
     val extraRules = if (forTest) listOf() else SagerDatabase.rulesDao.enabledRules()
+    val remoteRuleSets = if (forTest) emptyList() else RemoteRuleSetManager.config(extraRules)
     val extraProxies =
         if (forTest) mapOf() else SagerDatabase.proxyDao.getEntities(extraRules.mapNotNull { rule ->
             rule.outbound.takeIf { it > 0 && it != proxy.id }
@@ -511,6 +514,8 @@ fun buildConfig(
                 }
 
                 if (rule_set != null) generateRuleSet(rule_set, ruleSets)
+                val remoteTags = RemoteRuleSetStore.tags(rule.remoteRuleSetTags)
+                if (remoteTags.isNotEmpty()) rule_set = ((rule_set ?: emptyList()) + remoteTags).distinct()
 
                 if (rule.port.isNotBlank()) {
                     port = mutableListOf<Int>()
@@ -596,6 +601,8 @@ fun buildConfig(
                     if (ruleObj.outbound == TAG_BLOCK) {
                         ruleObj.outbound = null
                         ruleObj.action = "reject"
+                    } else if (rule.remoteRuleSetTags.isNotBlank()) {
+                        ruleObj.action = "route"
                     }
                     route.rules.add(ruleObj)
                     route.rule_set.addAll(ruleSets)
@@ -603,6 +610,7 @@ fun buildConfig(
             }
         }
 
+        route.rule_set.addAll(remoteRuleSets)
         // 对 rule_set tag 去重
         if (route.rule_set != null) {
             route.rule_set = route.rule_set.distinctBy { it.tag }
