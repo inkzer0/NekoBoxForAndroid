@@ -1,0 +1,15 @@
+allprojects { p ->
+    p.afterEvaluate {
+        if (p.path == ':app') {
+            p.dependencies.add('testImplementation', 'junit:junit:4.13.2')
+            p.dependencies.add('testImplementation', 'org.robolectric:robolectric:4.14.1')
+            p.android.testOptions.unitTests.includeAndroidResources = true
+            p.tasks.withType(Test).configureEach {
+                maxHeapSize = '1536m'
+                systemProperty 'phase2.schemaDir', new File(p.projectDir, 'schemas/io.nekohasekai.sagernet.database.SagerDatabase').absolutePath
+                systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+                testLogging { events 'passed', 'failed', 'skipped'; exceptionFormat 'full' }
+            }
+        }
+    }
+}

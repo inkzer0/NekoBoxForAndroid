@@ -1,0 +1,19 @@
+<resources>
+    <string name="remote_rule_sets">Remote rule sets</string>
+    <string name="ruleset_add">Add subscription</string>
+    <string name="ruleset_edit">Edit</string>
+    <string name="ruleset_update">Update now</string>
+    <string name="ruleset_delete">Delete subscription</string>
+    <string name="ruleset_enable">Enable</string>
+    <string name="ruleset_disable">Disable</string>
+    <string name="ruleset_enabled">Enabled</string>
+    <string name="ruleset_disabled">Disabled</string>
+    <string name="ruleset_no_cache">No valid cache; update before connecting</string>
+    <string name="ruleset_done">Completed</string>
+    <string name="ruleset_name">Name</string>
+    <string name="ruleset_tag">Unique tag (letters, digits, . _ -)</string>
+    <string name="ruleset_url">Subscription URL</string>
+    <string name="ruleset_format">Format</string>
+    <string name="ruleset_interval">Update interval (minutes)</string>
+    <string name="ruleset_notice">Downloads always use a direct network. Source JSON / binary SRS, up to 64 MiB. Android may delay scheduled updates. Existing valid caches survive failed updates. Route changes require reconnecting.</string>
+</resources>

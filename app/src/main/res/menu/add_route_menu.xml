@@ -15,4 +15,6 @@
         android:title="@string/route_manage_assets"
         app:showAsAction="never" />
 
+    <item android:id="@+id/action_remote_rule_sets"
+        android:title="@string/remote_rule_sets" app:showAsAction="never" />
 </menu>

@@ -12,6 +12,9 @@
         app:title="@string/custom_config"
         app:useSimpleSummaryProvider="true" />
     <PreferenceCategory app:title="@string/cag_route">
+        <MultiSelectListPreference
+            app:key="routeRemoteRuleSets"
+            app:title="@string/remote_rule_sets" />
         <io.nekohasekai.sagernet.widget.AppListPreference
             app:icon="@drawable/ic_baseline_legend_toggle_24"
             app:key="routePackages"
