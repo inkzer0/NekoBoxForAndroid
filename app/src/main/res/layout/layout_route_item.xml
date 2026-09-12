@@ -5,8 +5,8 @@
     android:id="@+id/content"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="4dp"
-    app:cardElevation="2dp">
+    android:layout_margin="8dp"
+    app:cardElevation="0dp">
 
     <LinearLayout
         android:id="@+id/content_lin"
@@ -36,7 +36,7 @@
                     android:id="@+id/profile_name"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textAppearance="?android:attr/textAppearanceSmall"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
                     android:textColor="?android:attr/textColorPrimary"
                     android:textStyle="bold"
                     tools:text="@string/profile_name" />
