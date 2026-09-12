@@ -1,0 +1,32 @@
+<resources>
+    <color name="m3_surface">#1C1B1F</color>
+    <color name="m3_on_surface">#E6E1E5</color>
+    <color name="m3_surface_variant">#302D33</color>
+    <color name="m3_on_surface_variant">#CAC4D0</color>
+    <color name="m3_outline">#938F99</color>
+    <color name="m3_outline_subtle">#49454F</color>
+    <color name="m3_on_primary">#1C1B1F</color>
+    <color name="m3_system_bar">#171418</color>
+    <color name="m3_error">#F2B8B5</color>
+    <color name="m3_material_pink_500">#EDABC1</color>
+    <color name="m3_color_pink_ssr">#EDABBE</color>
+    <color name="m3_material_amber_500">#EDDDAB</color>
+    <color name="m3_material_blue_500">#ABD0ED</color>
+    <color name="m3_material_blue_grey_500">#C3CFD5</color>
+    <color name="m3_material_brown_500">#D9C6BF</color>
+    <color name="m3_material_cyan_500">#ABE6ED</color>
+    <color name="m3_material_deep_orange_500">#EDBBAB</color>
+    <color name="m3_material_deep_purple_500">#C5B2E6</color>
+    <color name="m3_material_green_500">#B8E0BA</color>
+    <color name="m3_material_grey_500">#CCCCCC</color>
+    <color name="m3_material_indigo_500">#B3BBE5</color>
+    <color name="m3_material_light_blue_500">#ABD9ED</color>
+    <color name="m3_material_light_green_500">#CEE6B2</color>
+    <color name="m3_material_lime_500">#E7EDAB</color>
+    <color name="m3_material_orange_500">#EDD2AB</color>
+    <color name="m3_material_purple_500">#E3ACEC</color>
+    <color name="m3_material_red_500">#EDAFAB</color>
+    <color name="m3_material_teal_500">#ABEDE7</color>
+    <color name="m3_material_yellow_500">#EDE6AB</color>
+    <color name="m3_color_ng_black_primary">#CCCCCC</color>
+</resources>
