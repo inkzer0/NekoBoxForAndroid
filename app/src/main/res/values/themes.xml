@@ -5,8 +5,8 @@
         <item name="actionModeCloseDrawable">@drawable/ic_navigation_close</item>
         <item name="colorButtonNormal">?colorAccent</item>
         <item name="android:navigationBarColor">?colorPrimaryDark</item>
-        <item name="android:statusBarColor">@color/m3_system_bar</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/m3_status_bar</item>
+        <item name="android:windowLightStatusBar">@bool/m3_light_status_bar</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="colorPrimary">@color/m3_material_pink_500</item>
         <item name="colorPrimaryDark">@color/m3_system_bar</item>
@@ -83,8 +83,8 @@
         <item name="actionModeCloseDrawable">@drawable/ic_navigation_close</item>
         <item name="colorButtonNormal">?colorAccent</item>
         <item name="android:navigationBarColor">?colorPrimaryDark</item>
-        <item name="android:statusBarColor">@color/m3_system_bar</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/m3_status_bar</item>
+        <item name="android:windowLightStatusBar">@bool/m3_light_status_bar</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="colorPrimary">@color/m3_material_pink_500</item>
         <item name="colorPrimaryDark">@color/m3_system_bar</item>
