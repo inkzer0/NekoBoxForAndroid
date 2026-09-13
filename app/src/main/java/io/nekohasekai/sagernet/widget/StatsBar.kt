@@ -2,6 +2,7 @@ package io.nekohasekai.sagernet.widget
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.ContextWrapper
 import android.text.format.Formatter
 import android.util.AttributeSet
 import android.view.View
@@ -80,8 +81,18 @@ class StatsBar @JvmOverloads constructor(
         TooltipCompat.setTooltipText(this, text)
     }
 
+    private fun requireActivity(): MainActivity {
+        // Material theme overlays can wrap the Activity in multiple ContextWrappers.
+        var current = context
+        while (current is ContextWrapper) {
+            if (current is MainActivity) return current
+            current = current.baseContext
+        }
+        error("StatsBar requires a MainActivity context")
+    }
+
     fun changeState(state: BaseService.State) {
-        val activity = context as MainActivity
+        val activity = requireActivity()
         fun postWhenStarted(what: () -> Unit) = activity.lifecycleScope.launch(Dispatchers.Main) {
             delay(100L)
             activity.whenStarted { what() }
@@ -123,7 +134,7 @@ class StatsBar @JvmOverloads constructor(
     }
 
     fun testConnection() {
-        val activity = context as MainActivity
+        val activity = requireActivity()
         isEnabled = false
         setStatus(app.getText(R.string.connection_test_testing))
         runOnDefaultDispatcher {
