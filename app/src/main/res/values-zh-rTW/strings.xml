@@ -58,6 +58,7 @@
 \n直連： %3$s↑ %4$s↓</string>
     <string name="speed">%s/s</string>
     <string name="connection_test_testing">正在測試…</string>
+    <string name="connection_test_failed">連線測試失敗</string>
     <string name="connection_test_available">成功：HTTPS 握手花費 %dms</string>
     <string name="connection_test_error">失敗：%s</string>
     <string name="connection_test_fail">網路不可用</string>
