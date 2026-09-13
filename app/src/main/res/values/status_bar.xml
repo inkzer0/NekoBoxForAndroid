@@ -1,0 +1,4 @@
+<resources>
+    <color name="m3_status_bar">@color/m3_system_bar</color>
+    <bool name="m3_light_status_bar">false</bool>
+</resources>
