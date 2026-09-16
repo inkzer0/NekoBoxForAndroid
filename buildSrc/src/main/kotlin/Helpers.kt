@@ -123,7 +123,7 @@ fun Project.setupAppCommon() {
         if (keystorePwd != null) {
             signingConfigs {
                 create("release") {
-                    storeFile = rootProject.file("release.keystore")
+                    storeFile = rootProject.file(lp.getProperty("KEYSTORE_PATH") ?: System.getenv("KEYSTORE_PATH") ?: "release.keystore")
                     storePassword = keystorePwd
                     keyAlias = alias
                     keyPassword = pwd
