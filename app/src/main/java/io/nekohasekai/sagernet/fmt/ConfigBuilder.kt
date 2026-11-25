@@ -126,7 +126,6 @@ fun buildConfig(
     }
 
     val extraRules = if (forTest) listOf() else SagerDatabase.rulesDao.enabledRules()
-    val remoteRuleSets = if (forTest) emptyList() else RemoteRuleSetManager.config(extraRules)
     val extraProxies =
         if (forTest) mapOf() else SagerDatabase.proxyDao.getEntities(extraRules.mapNotNull { rule ->
             rule.outbound.takeIf { it > 0 && it != proxy.id }
@@ -142,6 +141,18 @@ fun buildConfig(
     val directDNS = DataStore.directDns.split("\n")
         .mapNotNull { dns -> dns.trim().takeIf { it.isNotBlank() && !it.startsWith("#") } }
     val enableDnsRouting = DataStore.enableDnsRouting
+    val globalCustomConfig = if (forTest) "" else DataStore.globalCustomConfig
+    val proxyCustomConfig = proxy.requireBean().customConfigJson
+    val dnsCandidates = if (enableDnsRouting) extraRules.asSequence()
+        .filter { it.outbound in -2L..0L }
+        .flatMap { RemoteRuleSetStore.tags(it.remoteRuleSetTags).asSequence() }
+        .distinct().toList() else emptyList()
+    val dnsRemoteTags = if (dnsCandidates.isEmpty()) emptySet() else {
+        // Config overrides can replace an app-managed tag with a different set. Do not
+        // infer the replacement's DNS compatibility from the app-managed cache.
+        val customTags = customRuleSetTags(globalCustomConfig, proxyCustomConfig)
+        RemoteRuleSetManager.domainRuleSetTags(dnsCandidates.filterNot { it in customTags }).toHashSet()
+    }
     val useFakeDns = DataStore.enableFakeDns && !forTest
     val needSniff = DataStore.trafficSniffing > 0
     val needSniffOverride = DataStore.trafficSniffing == 2
@@ -558,6 +569,8 @@ fun buildConfig(
                     return DNSRule_DefaultOptions().apply {
                         if (uidList.isNotEmpty()) user_id = uidList
                         domainList?.let { makeSingBoxRule(it) }
+                        val eligibleTags = remoteTags.filter { it in dnsRemoteTags }
+                        if (eligibleTags.isNotEmpty()) rule_set = (rule_set.orEmpty() + eligibleTags).distinct()
                     }
                 }
 
@@ -615,7 +628,6 @@ fun buildConfig(
             }
         }
 
-        route.rule_set.addAll(remoteRuleSets)
         // 对 rule_set tag 去重
         if (route.rule_set != null) {
             route.rule_set = route.rule_set.distinctBy { it.tag }
@@ -751,11 +763,12 @@ fun buildConfig(
             }
         }
 
-        if (!forTest) _hack_custom_config = DataStore.globalCustomConfig
+        if (!forTest) _hack_custom_config = globalCustomConfig
     }.let {
         migrateBuiltInConfig(it)
         val configMap = it.asMap()
-        Util.mergeJSON(configMap, proxy.requireBean().customConfigJson)
+        Util.mergeJSON(configMap, proxyCustomConfig)
+        if (!forTest) RemoteRuleSetManager.addToConfig(configMap, extraRules)
         ConfigBuildResult(
             gson.toJson(configMap),
             externalIndexMap,
@@ -766,4 +779,19 @@ fun buildConfig(
         )
     }
 
+}
+
+private fun customRuleSetTags(vararg overlays: String): Set<String> {
+    if (overlays.all { it.isBlank() }) return emptySet()
+    // Seed the generated route shape so append/prepend keys are treated as in the final merge.
+    val config = mutableMapOf<String, Any?>("route" to mutableMapOf("rule_set" to emptyList<Any>()))
+    overlays.forEach { Util.mergeJSON(config, it) }
+    val definitions = ((config["route"] as? Map<*, *>)?.get("rule_set") as? List<*>).orEmpty()
+    return definitions.flatMap { entry ->
+        when (val tag = (entry as? Map<*, *>)?.get("tag")) {
+            is String -> listOf(tag)
+            is List<*> -> tag.filterIsInstance<String>()
+            else -> emptyList()
+        }
+    }.toSet()
 }

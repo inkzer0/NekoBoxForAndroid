@@ -104,12 +104,22 @@ import io.nekohasekai.sagernet.fmt.*;
 import io.nekohasekai.sagernet.fmt.socks.*;
 import io.nekohasekai.sagernet.fmt.wireguard.*;
 import java.nio.file.*;
+import java.util.*;
+import com.google.gson.*;
 public class ConfigFixture {
  static void protocol(Path output,String name,int type,String beanClass,String setter,Object[][] fields)throws Exception {
   Class<?> cls=Class.forName(beanClass);AbstractBean bean=(AbstractBean)cls.getConstructor().newInstance();bean.initializeDefaultValues();bean.name=name;bean.serverAddress="127.0.0.1";bean.serverPort=443;
   for(Object[] field:fields)cls.getField((String)field[0]).set(bean,field[1]);
   ProxyEntity proxy=new ProxyEntity();proxy.setId(100);proxy.setGroupId(1);proxy.setType(type);ProxyEntity.class.getMethod(setter,cls).invoke(proxy,bean);
   Files.writeString(output.resolve("protocol-"+name+".json"),ConfigBuilderKt.buildConfig(proxy,false,false).getConfig());
+ }
+ static Set<String> usedRuleSets(String config, String section) {
+  Set<String> tags = new HashSet<>();
+  for (JsonElement rule : JsonParser.parseString(config).getAsJsonObject().getAsJsonObject(section).getAsJsonArray("rules")) {
+   JsonArray values = rule.getAsJsonObject().getAsJsonArray("rule_set");
+   if (values != null) for (JsonElement value : values) tags.add(value.getAsString());
+  }
+  return tags;
  }
  public static void main(String[] args)throws Exception {
   Path output=Paths.get(args[0]);Files.createDirectories(output);
@@ -152,22 +162,47 @@ public class ConfigFixture {
   protocol(output,"anytls",22,"moe.matsuri.nb4a.proxy.anytls.AnyTLSBean","setAnyTLSBean",new Object[][]{{"password","fixture-password"}});
 
   Path remote=output.getParent().resolve("remotes"); Files.createDirectories(remote.resolve("cache")); Files.createDirectories(remote.resolve("configs"));
-  for(String tag:new String[]{"first","second"}) {
+  for(String tag:new String[]{"first","second","addresses"}) {
     Path cache=remote.resolve("cache").resolve(tag+".json");
-    Files.writeString(cache,"{\\\"version\\\":3,\\\"rules\\\":[{\\\"domain\\\":[\\\""+tag+".invalid\\\"]}]}");
+    if (tag.equals("addresses")) Files.writeString(cache,"{\\\"version\\\":3,\\\"rules\\\":[{\\\"ip_cidr\\\":[\\\"192.0.2.0/24\\\"]}]}");
+    else Files.writeString(cache,"{\\\"version\\\":3,\\\"rules\\\":[{\\\"domain\\\":[\\\""+tag+".invalid\\\"]}]}");
     moe.matsuri.nb4a.SingBoxOptions.RuleSet set=new moe.matsuri.nb4a.SingBoxOptions.RuleSet();
     set.type="local";set.tag=tag;set.format="source";set.path=cache.toAbsolutePath().toString();RemoteRuleSetManager.sets.add(set);
   }
   SagerDatabase.rules.clear();
   RuleEntity ordinary=new RuleEntity();ordinary.setId(90);ordinary.setDomains("ordinary.invalid");ordinary.setOutbound(-1);SagerDatabase.rules.add(ordinary);
-  RuleEntity remoteRule=new RuleEntity();remoteRule.setId(91);remoteRule.setRemoteRuleSetTags("first\\nsecond");SagerDatabase.rules.add(remoteRule);
+  RuleEntity remoteRule=new RuleEntity();remoteRule.setId(91);remoteRule.setRemoteRuleSetTags("first\\nsecond\\naddresses");SagerDatabase.rules.add(remoteRule);
   RuleEntity site=new RuleEntity();site.setId(92);site.setDomains("geosite:github");site.setOutbound(-1);SagerDatabase.rules.add(site);
   RuleEntity ipRule=new RuleEntity();ipRule.setId(93);ipRule.setIp("geoip:us");ipRule.setOutbound(-1);SagerDatabase.rules.add(ipRule);
   proxy.setType(0);
   for(long outbound:new long[]{0,-1,-2,1}) {
     remoteRule.setOutbound(outbound);
-    Files.writeString(remote.resolve("configs").resolve("remote-outbound-"+outbound+".json"),ConfigBuilderKt.buildConfig(proxy,false,false).getConfig());
+    String config=ConfigBuilderKt.buildConfig(proxy,false,false).getConfig();
+    if (!usedRuleSets(config,"route").containsAll(Set.of("first","second","addresses")))
+        throw new AssertionError("domain and IP rule sets must still match traffic");
+    Set<String> dnsTags=usedRuleSets(config,"dns");
+    if (dnsTags.contains("addresses") || dnsTags.contains("first")!=(outbound!=1) || dnsTags.contains("second")!=(outbound!=1))
+        throw new AssertionError("unexpected generated DNS tags: "+dnsTags);
+    Files.writeString(remote.resolve("configs").resolve("remote-outbound-"+outbound+".json"),config);
   }
+  remoteRule.setOutbound(-1);
+  DataStore.dnsRouting=false;
+  if (usedRuleSets(ConfigBuilderKt.buildConfig(proxy,false,false).getConfig(),"dns").contains("first"))
+      throw new AssertionError("DNS routing disabled must not project a rule set");
+  DataStore.dnsRouting=true;
+  JsonObject overridden=new JsonObject();
+  JsonObject routeOverride=new JsonObject();
+  JsonArray shadowedSets=new JsonArray();
+  JsonObject shadowed=new JsonObject();
+  shadowed.addProperty("type","local"); shadowed.addProperty("tag","first");
+  shadowed.addProperty("format","source");
+  shadowed.addProperty("path",remote.resolve("cache").resolve("addresses.json").toAbsolutePath().toString());
+  shadowedSets.add(shadowed); routeOverride.add("rule_set+",shadowedSets); overridden.add("route",routeOverride);
+  DataStore.custom=overridden.toString();
+  Set<String> shadowedDns=usedRuleSets(ConfigBuilderKt.buildConfig(proxy,false,true).getConfig(),"dns");
+  if (shadowedDns.contains("first") || !shadowedDns.contains("second"))
+      throw new AssertionError("custom shadow applied incorrectly: "+shadowedDns);
+  DataStore.custom="";
 
 // Insert in the existing actual ConfigBuilder JVM fixture after its original 37 cases.
 Path geoOutput = output.getParent().resolve("geo-configs");
@@ -212,7 +247,28 @@ System.out.println("Generated 68 Geo fixtures from actual ConfigBuilder");
 }
 ''')
 
-source('io.nekohasekai.sagernet.database.RemoteRuleSetManager', 'package io.nekohasekai.sagernet.database;\nimport java.util.*;\nimport moe.matsuri.nb4a.SingBoxOptions.RuleSet;\npublic class RemoteRuleSetManager {\n public static final RemoteRuleSetManager INSTANCE = new RemoteRuleSetManager();\n public static java.util.List<RuleSet> sets = new ArrayList<>();\n public java.util.List<RuleSet> config(java.util.List<RuleEntity> rules) { return sets; }\n}\n')
+source('io.nekohasekai.sagernet.database.RemoteRuleSetManager', '''package io.nekohasekai.sagernet.database;
+import java.util.*;
+import moe.matsuri.nb4a.SingBoxOptions.RuleSet;
+public class RemoteRuleSetManager {
+ public static final RemoteRuleSetManager INSTANCE = new RemoteRuleSetManager();
+ public static List<RuleSet> sets = new ArrayList<>();
+ public List<String> domainRuleSetTags(List<String> tags) {
+  return tags.stream().filter(tag -> tag.equals("first") || tag.equals("second")).toList();
+ }
+ @SuppressWarnings("unchecked")
+ public void addToConfig(Map<String,Object> config, List<RuleEntity> rules) {
+  Set<String> requested = new HashSet<>();
+  for (RuleEntity rule : rules) requested.addAll(rule.getRemoteRuleSetTags().lines().toList());
+  Map<String,Object> route = (Map<String,Object>)config.get("route");
+  List<Object> definitions = new ArrayList<>((List<Object>)route.getOrDefault("rule_set", List.of()));
+  Set<String> existing = new HashSet<>();
+  for (Object value : definitions) existing.add((String)((Map<?,?>)value).get("tag"));
+  for (RuleSet set : sets) if (requested.contains(set.tag) && !existing.contains(set.tag)) definitions.add(set.asMap());
+  route.put("rule_set", definitions);
+ }
+}
+''')
 
 argfile=FIX/'javac.args'
 args=['-classpath',os.pathsep.join(str(p) for p in cp),'-d',str(CLASSES)]+[str(p) for p in SRC.rglob('*.java')]

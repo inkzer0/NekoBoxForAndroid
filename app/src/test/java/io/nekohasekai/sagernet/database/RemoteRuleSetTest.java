@@ -92,6 +92,13 @@ public class RemoteRuleSetTest {
         try { store.validateReferences(sets, Collections.singletonList(original)); fail("missing reference"); } catch (IllegalStateException expected) { }
     }
 
+    private Map<String, Object> routedThrough(String tag) {
+        Map<String, Object> config = new HashMap<>();
+        config.put("route", Collections.singletonMap("rules",
+            Collections.singletonList(Collections.singletonMap("rule_set", Collections.singletonList(tag)))));
+        return config;
+    }
+
     @Test public void actualBackupV1ImportAndNewBackupRoundTrip() throws Exception {
         io.nekohasekai.sagernet.SagerNet application = new io.nekohasekai.sagernet.SagerNet();
         org.robolectric.util.ReflectionHelpers.callInstanceMethod(application,"attach",
@@ -130,18 +137,56 @@ public class RemoteRuleSetTest {
             try { RemoteRuleSetManager.INSTANCE.delete(1); fail("referenced delete"); } catch (IllegalArgumentException expected) { }
             try { RemoteRuleSetManager.INSTANCE.save(new RemoteRuleSetEntity(1,"Fixture","renamed",e.getUrl(),"source",1440,false)); fail("referenced rename"); } catch (IllegalArgumentException expected) { }
             rule.setRemoteRuleSetTags(""); db.rulesDao().updateRule(rule);
-            File cache = new File(application.getFilesDir(),"remote-rule-sets/1.source"); cache.getParentFile().mkdirs(); Files.write(cache.toPath(),"valid".getBytes());
-            assertTrue(RemoteRuleSetManager.INSTANCE.config(Collections.emptyList()).isEmpty());
+            File cache = new File(application.getFilesDir(), "remote-rule-sets/1.source");
             e.setEnabled(true); db.remoteRuleSetsDao().update(e);
-            List<moe.matsuri.nb4a.SingBoxOptions.RuleSet> options = RemoteRuleSetManager.INSTANCE.config(Collections.emptyList());
-            assertEquals(1,options.size()); assertEquals("local",options.get(0).type);
-            assertEquals("first",options.get(0).tag); assertEquals("source",options.get(0).format);
-            assertEquals(cache.getAbsolutePath(),options.get(0).path); assertNull(options.get(0).url);
+
+            Map<String, Object> unreferenced = new HashMap<>();
+            RemoteRuleSetManager.INSTANCE.addToConfig(unreferenced, Collections.emptyList());
+            assertTrue(unreferenced.isEmpty());
+
             rule.setEnabled(true); rule.setRemoteRuleSetTags("first");
+            Map<String, Object> referenced = routedThrough("first");
+            try {
+                RemoteRuleSetManager.INSTANCE.addToConfig(referenced, Collections.singletonList(rule));
+                fail("referenced cache is missing");
+            } catch (IllegalArgumentException expected) { assertTrue(expected.getMessage().contains("no valid cache")); }
+
+            // A custom definition is already in the effective config, so no app-managed cache is needed.
+            Map<String, Object> explicit = new HashMap<>();
+            explicit.put("tag", "first"); explicit.put("type", "local"); explicit.put("path", "custom.srs");
+            Map<String, Object> explicitRoute = new HashMap<>();
+            explicitRoute.put("rules", ((Map<?, ?>) referenced.get("route")).get("rules"));
+            explicitRoute.put("rule_set", Collections.singletonList(explicit));
+            Map<String, Object> custom = new HashMap<>();
+            custom.put("route", explicitRoute);
+            RemoteRuleSetManager.INSTANCE.addToConfig(custom, Collections.singletonList(rule));
+            assertSame(explicitRoute, custom.get("route"));
+
+            // A reference from raw DNS JSON can use an app-managed cache even without a UI rule.
+            cache.getParentFile().mkdirs(); Files.write(cache.toPath(), "valid".getBytes());
+            Map<String, Object> dns = new HashMap<>();
+            Map<String, Object> nested = Collections.singletonMap("rules", Collections.singletonList(Collections.singletonMap("rule_set", "first")));
+            dns.put("dns", Collections.singletonMap("rules", Collections.singletonList(nested)));
+            RemoteRuleSetManager.INSTANCE.addToConfig(dns, Collections.emptyList());
+            List<?> definitions = (List<?>) ((Map<?, ?>) dns.get("route")).get("rule_set");
+            assertEquals(1, definitions.size());
+            Map<?, ?> definition = (Map<?, ?>) definitions.get(0);
+            assertEquals("local", definition.get("type"));
+            assertEquals("first", definition.get("tag"));
+            assertEquals("source", definition.get("format"));
+            assertEquals(cache.getAbsolutePath(), definition.get("path"));
+            assertFalse(definition.containsKey("url"));
+
             e.setEnabled(false); db.remoteRuleSetsDao().update(e);
-            try { RemoteRuleSetManager.INSTANCE.config(Collections.singletonList(rule)); fail("disabled reference config"); } catch (IllegalArgumentException expected) { }
+            try {
+                RemoteRuleSetManager.INSTANCE.addToConfig(referenced, Collections.singletonList(rule));
+                fail("disabled reference config");
+            } catch (IllegalArgumentException expected) { }
             rule.setRemoteRuleSetTags("missing");
-            try { RemoteRuleSetManager.INSTANCE.config(Collections.singletonList(rule)); fail("missing reference config"); } catch (IllegalStateException expected) { }
+            try {
+                RemoteRuleSetManager.INSTANCE.addToConfig(routedThrough("missing"), Collections.singletonList(rule));
+                fail("missing reference config");
+            } catch (IllegalStateException expected) { }
             RemoteRuleSetManager.INSTANCE.delete(1);
             assertNull(db.remoteRuleSetsDao().get(1)); assertFalse(cache.exists());
         } finally { db.close(); }

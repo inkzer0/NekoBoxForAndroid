@@ -28,10 +28,6 @@ import org.ini4j.Ini
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
-import org.yaml.snakeyaml.LoaderOptions
-import org.yaml.snakeyaml.TypeDescription
-import org.yaml.snakeyaml.Yaml
-import org.yaml.snakeyaml.constructor.SafeConstructor
 import org.yaml.snakeyaml.error.YAMLException
 import java.io.StringReader
 import androidx.core.net.toUri
@@ -236,15 +232,10 @@ object RawUpdater : GroupUpdater() {
 
             try {
 
-                val yaml = Yaml(SafeConstructor(LoaderOptions())).apply {
-                    addTypeDescription(TypeDescription(String::class.java, "str"))
-                }.loadAs(text, Map::class.java)
-
+                val yaml = ClashSubscriptionYaml.load(text)
                 val globalClientFingerprint = yaml["global-client-fingerprint"]?.toString() ?: ""
 
-                for (proxy in (yaml["proxies"] as? (List<Map<String, Any?>>) ?: error(
-                    app.getString(R.string.no_proxies_found_in_file)
-                ))) {
+                for (proxy in yaml["proxies"] as List<Map<String, Any?>>) {
                     // Note: YAML numbers parsed as "Long"
 
                     when (proxy["type"] as String) {

@@ -32,6 +32,20 @@ object RemoteRuleSetStore {
         } }
     }
 
+    /** Read effective route and DNS rules after custom configuration overlays have been merged. */
+    fun referencedTags(config: Map<String, Any?>): Set<String> = buildSet {
+        fun collect(rule: Map<*, *>) {
+            when (val value = rule["rule_set"]) {
+                is String -> add(value)
+                is List<*> -> value.filterIsInstance<String>().forEach { add(it) }
+            }
+            (rule["rules"] as? List<*>)?.filterIsInstance<Map<*, *>>()?.forEach(::collect)
+        }
+        listOf("route", "dns").forEach { section ->
+            (config[section] as? Map<*, *>)?.let { collect(it) }
+        }
+    }
+
     fun export(entities: List<RemoteRuleSetEntity>): JSONArray = JSONArray().apply {
         entities.forEach { e -> put(JSONObject().apply {
             put("id", e.id); put("name", e.name); put("tag", e.tag); put("url", e.url)

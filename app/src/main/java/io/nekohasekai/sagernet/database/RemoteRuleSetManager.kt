@@ -8,7 +8,6 @@ import androidx.work.*
 import androidx.work.multiprocess.RemoteWorkManager
 import io.nekohasekai.sagernet.SagerNet
 import libcore.Libcore
-import moe.matsuri.nb4a.SingBoxOptions.RuleSet
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -159,12 +158,46 @@ object RemoteRuleSetManager {
         }
     }
 
-    fun config(rules: List<RuleEntity>): List<RuleSet> = locked {
-        val entities = dao.all()
-        RemoteRuleSetStore.validateReferences(entities, rules)
-        entities.filter { it.enabled }.map { e ->
-            require(cache(e).isFile) { "Rule-set ${e.tag} has no valid cache; update it first" }
-            RuleSet().apply { type = "local"; tag = e.tag; format = e.format; path = cache(e).absolutePath }
+    // Only DNS-safe cached rule-sets are mirrored into generated DNS rules.
+    fun domainRuleSetTags(tags: List<String>): List<String> {
+        if (tags.isEmpty()) return emptyList()
+        return locked {
+            val byTag = dao.all().associateBy { it.tag }
+            tags.distinct().filter { tag ->
+                val entity = byTag[tag]?.takeIf { it.enabled } ?: return@filter false
+                val file = cache(entity)
+                file.isFile && Libcore.isDomainRuleSet(file.absolutePath, entity.format)
+            }
+        }
+    }
+
+    fun addToConfig(config: MutableMap<String, Any?>, rules: List<RuleEntity>) {
+        val referenced = RemoteRuleSetStore.referencedTags(config)
+        if (referenced.isEmpty()) return
+
+        @Suppress("UNCHECKED_CAST")
+        val route = config["route"] as? Map<String, Any?>
+        if (route == null && config["route"] != null) return // Let the core reject malformed overrides.
+        val definitions = route?.get("rule_set") as? List<*>
+        if (definitions == null && route?.get("rule_set") != null) return
+        val definedTags = definitions.orEmpty().mapNotNull { (it as? Map<*, *>)?.get("tag") as? String }.toSet()
+        val needed = referenced - definedTags
+        if (needed.isEmpty()) return
+
+        val uiTags = rules.filter { it.enabled }.flatMap { RemoteRuleSetStore.tags(it.remoteRuleSetTags) }.toSet()
+        val additions = locked {
+            val managed = dao.all().filter { it.tag in needed }
+            val managedTags = managed.map { it.tag }.toSet()
+            (uiTags.intersect(needed) - managedTags).firstOrNull()?.let { error("Missing rule-set: $it") }
+            managed.map { entity ->
+                require(entity.enabled) { "Enabled rule references disabled rule-set: ${entity.tag}" }
+                val file = cache(entity)
+                require(file.isFile) { "Rule-set ${entity.tag} has no valid cache; update it first" }
+                mapOf("type" to "local", "tag" to entity.tag, "format" to entity.format, "path" to file.absolutePath)
+            }
+        }
+        if (additions.isNotEmpty()) {
+            config["route"] = route.orEmpty() + ("rule_set" to (definitions.orEmpty() + additions))
         }
     }
 
