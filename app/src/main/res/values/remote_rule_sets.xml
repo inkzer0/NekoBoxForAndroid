@@ -16,4 +16,6 @@
     <string name="ruleset_format">Format</string>
     <string name="ruleset_interval">Update interval (minutes)</string>
     <string name="ruleset_notice">Downloads always use a direct network. Source JSON / binary SRS, up to 64 MiB. Android may delay scheduled updates. Existing valid caches survive failed updates. Route changes require reconnecting.</string>
+    <string name="ruleset_source_changed">Source changed. Wait for a successful update, then stop and start the proxy to apply it.</string>
+    <string name="ruleset_refresh_restart">Rule-set updated. Stop and start the proxy to apply the new source.</string>
 </resources>

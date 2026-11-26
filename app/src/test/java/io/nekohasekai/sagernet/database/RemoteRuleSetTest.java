@@ -137,8 +137,13 @@ public class RemoteRuleSetTest {
             try { RemoteRuleSetManager.INSTANCE.delete(1); fail("referenced delete"); } catch (IllegalArgumentException expected) { }
             try { RemoteRuleSetManager.INSTANCE.save(new RemoteRuleSetEntity(1,"Fixture","renamed",e.getUrl(),"source",1440,false)); fail("referenced rename"); } catch (IllegalArgumentException expected) { }
             rule.setRemoteRuleSetTags(""); db.rulesDao().updateRule(rule);
-            File cache = new File(application.getFilesDir(), "remote-rule-sets/1.source");
+            File cacheDirectory = new File(application.getFilesDir(), "remote-rule-sets");
+            assertTrue(cacheDirectory.isDirectory() || cacheDirectory.mkdirs());
+            File legacy = new File(cacheDirectory, "1.source");
+            Files.write(legacy.toPath(), "unknown-origin".getBytes());
+            File cache = new File(cacheDirectory, store.cacheName(e));
             e.setEnabled(true); db.remoteRuleSetsDao().update(e);
+            assertEquals(0L, RemoteRuleSetManager.INSTANCE.updated(e));
 
             Map<String, Object> unreferenced = new HashMap<>();
             RemoteRuleSetManager.INSTANCE.addToConfig(unreferenced, Collections.emptyList());
@@ -177,7 +182,46 @@ public class RemoteRuleSetTest {
             assertEquals(cache.getAbsolutePath(), definition.get("path"));
             assertFalse(definition.containsKey("url"));
 
-            e.setEnabled(false); db.remoteRuleSetsDao().update(e);
+            RemoteRuleSetManager manager = RemoteRuleSetManager.INSTANCE;
+            RemoteRuleSetEntity changed = new RemoteRuleSetEntity(
+                1, "Changed fixture", "first", "https://example.invalid/different?token=fixture", "source", 1440, true
+            );
+            kotlin.jvm.functions.Function1<kotlin.jvm.functions.Function0<kotlin.Unit>, kotlin.Unit> transaction = writes -> {
+                db.runInTransaction((Runnable) () -> writes.invoke());
+                return kotlin.Unit.INSTANCE;
+            };
+            try {
+                manager.restore(Collections.singletonList(changed), transaction, () -> {
+                    db.rulesDao().reset();
+                    throw new IllegalStateException("rollback fixture");
+                });
+                fail("transaction failure");
+            } catch (IllegalStateException expected) { assertEquals("rollback fixture", expected.getMessage()); }
+            assertEquals(e, db.remoteRuleSetsDao().get(1));
+            assertNotNull(db.rulesDao().getById(42));
+            assertTrue(cache.isFile());
+            assertTrue(legacy.isFile());
+
+            manager.restore(Collections.singletonList(e), transaction, () -> kotlin.Unit.INSTANCE);
+            assertTrue(cache.isFile()); // Keep the same-source offline cache on a metadata restore.
+            assertTrue(manager.updated(e) > 0);
+            manager.save(changed);
+            File replacement = new File(cacheDirectory, store.cacheName(changed));
+            assertNotEquals(cache, replacement);
+            assertFalse(cache.exists());
+            assertFalse(legacy.exists());
+            assertEquals(0L, manager.updated(changed));
+            try {
+                manager.addToConfig(routedThrough("first"), Collections.singletonList(rule));
+                fail("old bytes must not be selected under the changed URL");
+            } catch (IllegalArgumentException expected) { assertTrue(expected.getMessage().contains("no valid cache")); }
+            Files.write(replacement.toPath(), "new validated content fixture".getBytes());
+            Map<String, Object> updatedConfig = routedThrough("first");
+            manager.addToConfig(updatedConfig, Collections.singletonList(rule));
+            List<?> newDefinitions = (List<?>) ((Map<?, ?>) updatedConfig.get("route")).get("rule_set");
+            assertEquals(replacement.getAbsolutePath(), ((Map<?, ?>) newDefinitions.get(0)).get("path"));
+
+            changed.setEnabled(false); db.remoteRuleSetsDao().update(changed);
             try {
                 RemoteRuleSetManager.INSTANCE.addToConfig(referenced, Collections.singletonList(rule));
                 fail("disabled reference config");
@@ -188,13 +232,28 @@ public class RemoteRuleSetTest {
                 fail("missing reference config");
             } catch (IllegalStateException expected) { }
             RemoteRuleSetManager.INSTANCE.delete(1);
-            assertNull(db.remoteRuleSetsDao().get(1)); assertFalse(cache.exists());
+            assertNull(db.remoteRuleSetsDao().get(1)); assertFalse(replacement.exists());
         } finally { db.close(); }
+    }
+
+    @Test public void watcherPathDependsOnExactSourceAndNotPresentationMetadata() {
+        RemoteRuleSetEntity base = new RemoteRuleSetEntity(10, "Fixture", "tag", "https://example.invalid/one?secret=fixture", "source", 60, true);
+        RemoteRuleSetEntity presentation = new RemoteRuleSetEntity(10, "Name", "another-tag", base.getUrl(), "source", 240, false);
+        RemoteRuleSetEntity otherUrl = new RemoteRuleSetEntity(10, "Fixture", "tag", "https://example.invalid/two?secret=fixture", "source", 60, true);
+        RemoteRuleSetEntity otherFormat = new RemoteRuleSetEntity(10, "Fixture", "tag", base.getUrl(), "binary", 60, true);
+        assertTrue(store.sameSource(base, presentation));
+        assertEquals(store.cacheName(base), store.cacheName(presentation));
+        assertFalse(store.sameSource(base, otherUrl));
+        assertNotEquals(store.cacheName(base), store.cacheName(otherUrl));
+        assertFalse(store.sameSource(base, otherFormat));
+        assertNotEquals(store.cacheName(base), store.cacheName(otherFormat));
+        assertTrue(store.cacheName(base).matches("10-[0-9a-f]{64}\\.source"));
+        assertFalse(store.cacheName(base).contains("secret"));
     }
 
     @Test public void atomicReplacementKeepsPreviousCacheOnEveryFailure() throws Exception {
         File directory = Files.createTempDirectory("rule-set-test").toFile();
-        File target = new File(directory,"1.source"); Files.write(target.toPath(),"old".getBytes());
+        File target = new File(directory, store.cacheName(entity(1, "first"))); Files.write(target.toPath(),"old".getBytes());
         kotlin.jvm.functions.Function2<File,File,kotlin.Unit> rename = (from,to) -> {
             try { Files.move(from.toPath(),to.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING); return kotlin.Unit.INSTANCE; }
             catch (IOException e) { throw new RuntimeException(e); }

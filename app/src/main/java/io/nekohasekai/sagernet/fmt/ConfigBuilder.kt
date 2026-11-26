@@ -2,6 +2,7 @@ package io.nekohasekai.sagernet.fmt
 
 import android.widget.Toast
 import io.nekohasekai.sagernet.*
+import io.nekohasekai.sagernet.bg.ClashDashboardAuth
 import io.nekohasekai.sagernet.bg.VpnService
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
@@ -170,9 +171,9 @@ fun buildConfig(
     }
 
     return MyOptions().apply {
-        if (!forTest && DataStore.enableClashAPI) experimental = ExperimentalOptions().apply {
+        if (!forTest && !forExport && DataStore.enableClashAPI) experimental = ExperimentalOptions().apply {
             clash_api = ClashAPIOptions().apply {
-                external_controller = "127.0.0.1:9090"
+                external_controller = ClashDashboardAuth.CONTROLLER
                 external_ui = "../files/yacd"
             }
         }

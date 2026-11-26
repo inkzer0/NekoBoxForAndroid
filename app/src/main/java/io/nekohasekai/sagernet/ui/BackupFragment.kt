@@ -18,7 +18,6 @@ import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.bg.Executable
 import io.nekohasekai.sagernet.database.*
-import io.nekohasekai.sagernet.database.preference.KeyValuePair
 import io.nekohasekai.sagernet.database.preference.PublicDatabase
 import io.nekohasekai.sagernet.databinding.LayoutBackupBinding
 import io.nekohasekai.sagernet.databinding.LayoutImportBinding
@@ -235,8 +234,9 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
             MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.backup_import)
                 .setView(import.root)
                 .setPositiveButton(R.string.backup_import) { _, _ ->
-                    SagerNet.stopService()
-
+                    val profiles = import.backupConfigurations.isChecked
+                    val rules = import.backupRules.isChecked
+                    val settings = import.backupSettings.isChecked
                     val binding = LayoutProgressBinding.inflate(layoutInflater)
                     binding.content.text = getString(R.string.backup_importing)
                     val dialog = AlertDialog.Builder(requireContext())
@@ -245,17 +245,16 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
                         .show()
                     runOnDefaultDispatcher {
                         runCatching {
-                            finishImport(
-                                content,
-                                import.backupConfigurations.isChecked,
-                                import.backupRules.isChecked,
-                                import.backupSettings.isChecked
-                            )
-                            triggerFullRestart(requireContext())
+                            finishImport(content, profiles, rules, settings)
+                        }.onSuccess { changed ->
+                            if (changed) {
+                                SagerNet.stopService()
+                                triggerFullRestart(app)
+                            }
                         }.onFailure {
-                            Logs.w(it)
+                            Logs.w("Backup restore failed: ${it.javaClass.simpleName}")
                             onMainDispatcher {
-                                alert(it.readableMessage).tryToShow()
+                                alert(getString(R.string.backup_restore_failed)).tryToShow()
                             }
                         }
 
@@ -271,80 +270,41 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
 
     fun finishImport(
         content: JSONObject, profile: Boolean, rule: Boolean, setting: Boolean
-    ) {
-        val (remoteSets, parsedReferences) = try {
-            val sets = if (rule && content.has("rules")) {
-                RemoteRuleSetStore.parse(if (content.has("remoteRuleSets")) content.getJSONArray("remoteRuleSets") else null)
-            } else emptyList()
-            val references = if (rule && content.has("remoteRuleSetReferences")) content.getJSONObject("remoteRuleSetReferences") else JSONObject()
-            val parsed = references.keys().asSequence().associateWith { key ->
-                require(key.toLongOrNull() != null)
-                val array = references.getJSONArray(key)
-                (0 until array.length()).map { array.getString(it) }.also { tags ->
-                    require(tags.all { tag -> sets.any { it.tag == tag } })
-                }.joinToString("\n")
+    ): Boolean {
+        val backup = BackupRestoreData.parse(content, profile, rule, setting)
+        if (!backup.hasChanges) return false
+        if (backup.profiles == null && backup.rules == null && backup.settings != null) {
+            val database = PublicDatabase.instance
+            database.runInTransaction {
+                database.keyValuePairDao().reset()
+                database.keyValuePairDao().insert(backup.settings)
             }
-            sets to parsed
-        } catch (_: Exception) {
-            throw IllegalArgumentException("Invalid remote rule-set backup data")
+            return true
         }
-        if (profile && content.has("profiles")) {
-            val profiles = mutableListOf<ProxyEntity>()
-            val jsonProfiles = content.getJSONArray("profiles")
-            for (i in 0 until jsonProfiles.length()) {
-                val data = Util.b64Decode(jsonProfiles[i] as String)
-                val parcel = Parcel.obtain()
-                parcel.unmarshall(data, 0, data.size)
-                parcel.setDataPosition(0)
-                profiles.add(ProxyEntity.CREATOR.createFromParcel(parcel))
-                parcel.recycle()
-            }
-            SagerDatabase.proxyDao.reset()
-            SagerDatabase.proxyDao.insert(profiles)
 
-            val groups = mutableListOf<ProxyGroup>()
-            val jsonGroups = content.getJSONArray("groups")
-            for (i in 0 until jsonGroups.length()) {
-                val data = Util.b64Decode(jsonGroups[i] as String)
-                val parcel = Parcel.obtain()
-                parcel.unmarshall(data, 0, data.size)
-                parcel.setDataPosition(0)
-                groups.add(ProxyGroup.CREATOR.createFromParcel(parcel))
-                parcel.recycle()
-            }
-            SagerDatabase.groupDao.reset()
-            SagerDatabase.groupDao.insert(groups)
+        val database = SagerDatabase.instance
+        val transaction = { writes: () -> Unit ->
+            BackupRestoreTransaction.run(database, backup.settings?.let {
+                PublicDatabase.instance.openHelper.writableDatabase.path
+            }, writes)
         }
-        if (rule && content.has("rules")) {
-            val rules = mutableListOf<RuleEntity>()
-            val jsonRules = content.getJSONArray("rules")
-            for (i in 0 until jsonRules.length()) {
-                val data = Util.b64Decode(jsonRules[i] as String)
-                val parcel = Parcel.obtain()
-                parcel.unmarshall(data, 0, data.size)
-                parcel.setDataPosition(0)
-                rules.add(ParcelizeBridge.createRule(parcel).apply { remoteRuleSetTags = parsedReferences[id.toString()] ?: "" })
-                parcel.recycle()
+        val replaceRows: () -> Unit = {
+            backup.profiles?.let {
+                database.proxyDao().reset()
+                database.proxyDao().insert(it)
+                database.groupDao().reset()
+                database.groupDao().insert(checkNotNull(backup.groups))
             }
-            require(parsedReferences.keys.all { id -> rules.any { it.id.toString() == id } }) { "Missing referenced route" }
-            RemoteRuleSetManager.restore(remoteSets)
-            SagerDatabase.rulesDao.reset()
-            SagerDatabase.rulesDao.insert(rules)
-        }
-        if (setting && content.has("settings")) {
-            val settings = mutableListOf<KeyValuePair>()
-            val jsonSettings = content.getJSONArray("settings")
-            for (i in 0 until jsonSettings.length()) {
-                val data = Util.b64Decode(jsonSettings[i] as String)
-                val parcel = Parcel.obtain()
-                parcel.unmarshall(data, 0, data.size)
-                parcel.setDataPosition(0)
-                settings.add(KeyValuePair.CREATOR.createFromParcel(parcel))
-                parcel.recycle()
+            backup.rules?.let {
+                database.rulesDao().reset()
+                database.rulesDao().insert(it)
             }
-            PublicDatabase.kvPairDao.reset()
-            PublicDatabase.kvPairDao.insert(settings)
+            backup.settings?.let {
+                BackupRestoreTransaction.replaceSettings(database.openHelper.writableDatabase, it)
+            }
         }
+        if (backup.rules != null) RemoteRuleSetManager.restore(backup.remoteSets, transaction, replaceRows)
+        else transaction(replaceRows)
+        return true
     }
-
 }

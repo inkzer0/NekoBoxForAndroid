@@ -83,7 +83,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                                 .subText(SagerNet.appVersionNameForDisplay)
                                 .setOnClickAction {
                                     requireContext().launchCustomTab(
-                                        "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases"
+                                        ForkRelease.RELEASES_URL
                                     )
                                 }
                                 .build())
@@ -91,14 +91,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                             MaterialAboutActionItem.Builder()
                                 .text(R.string.check_update_release)
                                 .setOnClickAction {
-                                    checkUpdate(false)
-                                }
-                                .build())
-                        .addItem(
-                            MaterialAboutActionItem.Builder()
-                                .text(R.string.check_update_preview)
-                                .setOnClickAction {
-                                    checkUpdate(true)
+                                    checkUpdate()
                                 }
                                 .build())
                         .addItem(
@@ -211,7 +204,7 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
             }
         }
 
-        fun checkUpdate(checkPreview: Boolean) {
+        private fun checkUpdate() {
             runOnIoDispatcher {
                 try {
                     val client = Libcore.newHttpClient().apply {
@@ -219,32 +212,14 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                         trySocks5(DataStore.mixedPort)
                     }
                     val response = client.newRequest().apply {
-                        if (checkPreview) {
-                            setURL("https://api.github.com/repos/MatsuriDayo/NekoBoxForAndroid/releases/tags/preview")
-                        } else {
-                            setURL("https://api.github.com/repos/MatsuriDayo/NekoBoxForAndroid/releases/latest")
-                        }
+                        setURL(ForkRelease.LATEST_API)
                     }.execute()
                     val release = JSONObject(Util.getStringBox(response.contentString))
-                    val releaseName = release.getString("name")
-                    val releaseUrl = release.getString("html_url")
-                    var haveUpdate = releaseName.isNotBlank()
-                    haveUpdate = if (isPreview) {
-                        if (checkPreview) {
-                            haveUpdate && releaseName != BuildConfig.PRE_VERSION_NAME
-                        } else {
-                            // User: 1.3.9 pre-1.4.0 Stable: 1.3.9 -> No update
-                            haveUpdate && releaseName != BuildConfig.VERSION_NAME
-                        }
-                    } else {
-                        // User: 1.4.0 Preview: pre-1.4.0 -> No update
-                        // User: 1.4.0 Preview: pre-1.4.1 -> Update
-                        // User: 1.4.0 Stable: 1.4.0 -> No update
-                        // User: 1.4.0 Stable: 1.4.1 -> Update
-                        haveUpdate && !releaseName.contains(BuildConfig.VERSION_NAME)
-                    }
+                    val tag = release.getString("tag_name")
+                    val releaseName = release.optString("name").takeIf { it.isNotBlank() } ?: tag
+                    val releaseUrl = ForkRelease.newerReleaseUrl(BuildConfig.VERSION_NAME, tag)
                     runOnMainDispatcher {
-                        if (haveUpdate) {
+                        if (releaseUrl != null) {
                             val context = requireContext()
                             MaterialAlertDialogBuilder(context)
                                 .setTitle(R.string.update_dialog_title)

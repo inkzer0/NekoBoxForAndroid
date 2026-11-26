@@ -3,6 +3,7 @@ package io.nekohasekai.sagernet.bg.proto
 import android.os.SystemClock
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.bg.AbstractInstance
+import io.nekohasekai.sagernet.bg.ClashDashboardAuth
 import io.nekohasekai.sagernet.bg.GuardedProcessPool
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
@@ -49,7 +50,18 @@ abstract class BoxInstance(
     }
 
     protected open suspend fun loadConfig() {
-        box = Libcore.newSingBoxInstance(config.config, LocalResolverImpl)
+        var dashboardCredential: String? = null
+        val runtimeConfig = ClashDashboardAuth.protectRuntime(config.config, DataStore.enableClashAPI) {
+            ClashDashboardAuth.rotateCredential(SagerNet.application).also { dashboardCredential = it }
+        }
+        try {
+            box = Libcore.newSingBoxInstance(runtimeConfig, LocalResolverImpl)
+        } catch (e: Exception) {
+            val secret = dashboardCredential ?: throw e
+            val message = e.message
+            if (message == null || secret !in message) throw e
+            error(message.replace(secret, "[redacted]"))
+        }
     }
 
     open suspend fun init() {

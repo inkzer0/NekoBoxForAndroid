@@ -30,7 +30,7 @@ android {
     namespace = "io.nekohasekai.sagernet"
     packaging {
         jniLibs {
-            useLegacyPackaging = true
+            useLegacyPackaging = false
         }
     }
     androidResources {

@@ -16,4 +16,6 @@
     <string name="ruleset_format">格式</string>
     <string name="ruleset_interval">更新间隔（分钟）</string>
     <string name="ruleset_notice">固定使用直连网络下载。支持 source JSON / binary SRS，最大 64 MiB。Android 可能推迟定时更新；更新失败保留有效缓存。修改路由后请重新连接。</string>
+    <string name="ruleset_source_changed">规则集来源已更改。请等更新成功后关闭并重新开启代理，以应用新来源。</string>
+    <string name="ruleset_refresh_restart">规则集已更新。请关闭并重新开启代理，以应用新来源。</string>
 </resources>

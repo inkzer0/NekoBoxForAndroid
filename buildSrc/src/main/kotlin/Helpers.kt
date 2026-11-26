@@ -41,7 +41,11 @@ fun Project.requireLocalProperties(): Properties {
 
 fun Project.setupCommon() {
     android.apply {
-        buildToolsVersion = "35.0.1"
+        val toolchain = Properties().apply {
+            rootProject.file("buildScript/init/android_toolchain.properties").inputStream().use { load(it) }
+        }
+        buildToolsVersion = toolchain.getProperty("BUILD_TOOLS_VERSION")
+        ndkVersion = toolchain.getProperty("NDK_VERSION")
         compileSdk = 35
         defaultConfig {
             minSdk = 21
