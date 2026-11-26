@@ -38,7 +38,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           source buildScript/init/android_toolchain.properties
-          sdkmanager "ndk;$NDK_VERSION"
+          bash buildScript/init/install_android_packages.sh "ndk;$NDK_VERSION"
           ./run lib core
       - uses: actions/upload-artifact@v4
         with:

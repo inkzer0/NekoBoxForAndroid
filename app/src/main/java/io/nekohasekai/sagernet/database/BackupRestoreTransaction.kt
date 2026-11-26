@@ -3,7 +3,7 @@ package io.nekohasekai.sagernet.database
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import io.nekohasekai.sagernet.database.preference.KeyValuePair
-import io.nekohasekai.sagernet.ktx.Logs
+import android.util.Log
 
 /** The two app databases use rollback journals, so an attached write can commit both together. */
 internal object BackupRestoreTransaction {
@@ -14,7 +14,7 @@ internal object BackupRestoreTransaction {
             return
         }
         val sqlite = database.openHelper.writableDatabase
-        check(settingsPath.isNotBlank() && settingsPath != ":memory:" && settingsPath != sqlite.path)
+        check(settingsPath.isNotBlank() && settingsPath != ":memory:" && sqlite.path != ":memory:" && settingsPath != sqlite.path)
         checkJournal(sqlite, "main")
         // Android's rollback-journal SQLite pool uses a single primary connection.
         sqlite.execSQL("ATTACH DATABASE ? AS restore_settings", arrayOf(settingsPath))
@@ -27,7 +27,7 @@ internal object BackupRestoreTransaction {
             }
         } finally {
             runCatching { sqlite.execSQL("DETACH DATABASE restore_settings") }
-                .onFailure { Logs.w("Could not detach settings after backup restore") }
+                .onFailure { Log.w("BackupRestore", "Could not detach settings after backup restore") }
         }
     }
 

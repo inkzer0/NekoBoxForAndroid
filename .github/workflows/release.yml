@@ -60,7 +60,7 @@ jobs:
       - name: Install pinned Android toolchain
         run: |
           source buildScript/init/android_toolchain.properties
-          sdkmanager 'platforms;android-35' "build-tools;$BUILD_TOOLS_VERSION" "ndk;$NDK_VERSION"
+          bash buildScript/init/install_android_packages.sh 'platforms;android-35' "build-tools;$BUILD_TOOLS_VERSION" "ndk;$NDK_VERSION"
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
       - name: Run JVM regressions and verify unsigned packaging
         env:
@@ -107,7 +107,7 @@ jobs:
       - name: Install pinned Android toolchain
         run: |
           source buildScript/init/android_toolchain.properties
-          sdkmanager 'platforms;android-35' "build-tools;$BUILD_TOOLS_VERSION" "ndk;$NDK_VERSION"
+          bash buildScript/init/install_android_packages.sh 'platforms;android-35' "build-tools;$BUILD_TOOLS_VERSION" "ndk;$NDK_VERSION"
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
       - name: Build, sign and verify final APKs
         env:
@@ -181,7 +181,7 @@ jobs:
       - name: Install pinned Android toolchain
         run: |
           source buildScript/init/android_toolchain.properties
-          sdkmanager 'platforms;android-35' "build-tools;$BUILD_TOOLS_VERSION" "ndk;$NDK_VERSION"
+          bash buildScript/init/install_android_packages.sh 'platforms;android-35' "build-tools;$BUILD_TOOLS_VERSION" "ndk;$NDK_VERSION"
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
       - name: Build, sign and verify final AAB
         env:

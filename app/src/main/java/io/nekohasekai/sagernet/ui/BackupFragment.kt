@@ -247,10 +247,7 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
                         runCatching {
                             finishImport(content, profiles, rules, settings)
                         }.onSuccess { changed ->
-                            if (changed) {
-                                SagerNet.stopService()
-                                triggerFullRestart(app)
-                            }
+                            if (changed) triggerFullRestart(app)
                         }.onFailure {
                             Logs.w("Backup restore failed: ${it.javaClass.simpleName}")
                             onMainDispatcher {
