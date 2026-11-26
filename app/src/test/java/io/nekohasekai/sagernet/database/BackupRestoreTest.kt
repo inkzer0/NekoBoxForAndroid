@@ -17,9 +17,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.SQLiteMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class, manifest = Config.NONE)
+@SQLiteMode(SQLiteMode.Mode.NATIVE)
 class BackupRestoreTest {
     @Test fun malformedLaterSectionAndDuplicateSettingsAreRejectedUpFront() {
         val malformed = JSONObject().put("profiles", JSONArray()).put("groups", JSONObject())

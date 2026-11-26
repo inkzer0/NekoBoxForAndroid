@@ -41,16 +41,22 @@ internal data class BackupRestoreData(
                 read("settings", KeyValuePair.CREATOR::createFromParcel) else null
 
             val withRules = rule && content.has("rules")
-            val remoteSets = if (withRules && content.has("remoteRuleSets"))
-                RemoteRuleSetStore.parse(content.getJSONArray("remoteRuleSets")) else emptyList()
-            val references = if (withRules && content.has("remoteRuleSetReferences"))
-                content.getJSONObject("remoteRuleSetReferences") else JSONObject()
-            val tags = references.keys().asSequence().associateWith { key ->
-                require(key.toLongOrNull() != null)
-                val array = references.getJSONArray(key)
-                (0 until array.length()).map(array::getString).also { values ->
-                    require(values.all { tag -> remoteSets.any { it.tag == tag } })
-                }.joinToString("\n")
+            val (remoteSets, tags) = try {
+                val sets = if (withRules && content.has("remoteRuleSets"))
+                    RemoteRuleSetStore.parse(content.getJSONArray("remoteRuleSets")) else emptyList()
+                val references = if (withRules && content.has("remoteRuleSetReferences"))
+                    content.getJSONObject("remoteRuleSetReferences") else JSONObject()
+                val decodedTags = references.keys().asSequence().associateWith { key ->
+                    require(key.toLongOrNull() != null)
+                    val array = references.getJSONArray(key)
+                    (0 until array.length()).map(array::getString).also { values ->
+                        require(values.all { tag -> sets.any { it.tag == tag } })
+                    }.joinToString("\n")
+                }
+                sets to decodedTags
+            } catch (_: Exception) {
+                // Raw JSON exceptions can include private URLs or embedded backup content.
+                throw IllegalArgumentException("Invalid remote rule-set backup data")
             }
             val rules = if (withRules) read("rules") { parcel ->
                 ParcelizeBridge.createRule(parcel).apply {

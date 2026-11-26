@@ -33,7 +33,8 @@ internal object BackupRestoreTransaction {
 
     private fun checkJournal(sqlite: SupportSQLiteDatabase, schema: String) {
         sqlite.query("PRAGMA $schema.journal_mode").use {
-            check(it.moveToFirst() && it.getString(0).lowercase() in setOf("delete", "truncate", "persist"))
+            val mode = if (it.moveToFirst()) it.getString(0).lowercase() else "unknown"
+            check(mode in setOf("delete", "truncate", "persist")) { "Unexpected ${schema} journal mode: $mode" }
         }
         sqlite.query("PRAGMA $schema.synchronous").use {
             check(it.moveToFirst() && it.getInt(0) > 0)
