@@ -1,0 +1,148 @@
+name: Publish NekoBox v1.4.5
+on:
+  push:
+    branches: [release-job/v1.4.5]
+permissions: {}
+concurrency:
+  group: publish-nekobox-v1.4.5
+  cancel-in-progress: false
+env:
+  RELEASE_SHA: 7f15e7978621bba01bdc2a8dba6269d6e78c1a97
+  VALIDATED_SHA: 813dd0e01cc70d485f348e1a5b71ee823d8f0195
+  TAG: v1.4.5
+  NATIVE_ARTIFACT: '15135987013'
+  NATIVE_DIGEST: 2f34cd18208d4d4ea128e1a1ebeb6f640de4ca4cb611d6367f270e06d15f5ee1
+  RELEASE_CERT_SHA256: 813c450fa5a0428978e1c76a1e7c7b88404b323c5d8e05b419bc3b3d61914dee
+jobs:
+  build:
+    name: Build and verify four signed APKs
+    if: github.repository == 'inkzer0/NekoBoxForAndroid'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Verify validated source and native artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git fetch --no-tags origin "$VALIDATED_SHA"
+          git diff --exit-code "$VALIDATED_SHA" "$RELEASE_SHA" -- . ':!nb4a.properties'
+          git diff --exit-code "$VALIDATED_SHA" "$RELEASE_SHA" -- libcore buildScript run
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$NATIVE_ARTIFACT" --jq '.workflow_run.head_sha')" = "$VALIDATED_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$NATIVE_ARTIFACT/zip" > "$RUNNER_TEMP/libcore.zip"
+          printf '%s  %s\n' "$NATIVE_DIGEST" "$RUNNER_TEMP/libcore.zip" | sha256sum --check
+          mkdir -p app/libs
+          unzip -p "$RUNNER_TEMP/libcore.zip" libcore.aar > app/libs/libcore.aar
+          test -s app/libs/libcore.aar
+      - name: Build signed NekoBox v1.4.5
+        env:
+          BUILD_PLUGIN: none
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
+          ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
+        run: |
+          set -euo pipefail
+          source buildScript/init/android_toolchain.properties
+          bash buildScript/init/install_android_packages.sh 'platforms;android-35' "build-tools;$BUILD_TOOLS_VERSION" "ndk;$NDK_VERSION"
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          source buildScript/release/signing-env.sh
+          trap 'rm -f -- "$KEYSTORE_PATH"' EXIT
+          ./run init action gradle
+          ./gradlew app:assembleOssRelease
+      - name: Validate package ID, version, ABI, signature and 16 KB alignment
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          source buildScript/init/android_toolchain.properties
+          bt="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/oss/release/*.apk)
+          test "${#apks[@]}" = 4
+          bash buildScript/release/verify-packages.sh "${apks[@]}"
+          mkdir release-artifacts
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            apk="app/build/outputs/apk/oss/release/NekoBox-1.4.5-$abi.apk"
+            test -f "$apk"
+            badging=$("$bt/aapt" dump badging "$apk")
+            grep -F "package: name='moe.nb4a' versionCode='245' versionName='1.4.5'" <<<"$badging"
+            grep -Fx "native-code: '$abi' " <<<"$badging" || grep -Fx "native-code: '$abi'" <<<"$badging"
+            cert=$("$bt/apksigner" verify --print-certs "$apk")
+            fingerprint=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<<"$cert")
+            test "$fingerprint" = "$RELEASE_CERT_SHA256"
+            cp "$apk" release-artifacts/
+          done
+          (cd release-artifacts && sha256sum ./*.apk | sed 's,  \./,  ,' > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v1.4.5-verified-signed-apks
+          path: release-artifacts
+          if-no-files-found: error
+  publish:
+    name: Publish verified GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: v1.4.5-verified-signed-apks
+          path: release-artifacts
+      - name: Verify draft assets before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh_api="repos/$GITHUB_REPOSITORY"
+          test "$(gh api "$gh_api/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
+          (cd release-artifacts && sha256sum --check SHA256SUMS.txt)
+          if tag_sha=$(gh api "$gh_api/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null); then
+            test "$tag_sha" = "$RELEASE_SHA"
+          else
+            gh api -X POST "$gh_api/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$RELEASE_SHA" --jq '.ref'
+          fi
+          test "$(gh api "$gh_api/git/ref/tags/$TAG" --jq '.object.sha')" = "$RELEASE_SHA"
+          cat > release-notes.md <<NOTES
+          ## 修复
+          - 订阅刷新失败或返回零个可用节点时保留已有配置；「仅在连接时更新」不再回退直连。
+          - 恢复前先校验备份内容，写入失败会回滚。远程规则集换地址后不再误用旧来源的缓存。
+          - 收紧 VPN 快捷入口权限，为内置 Clash 面板加上本机鉴权。正式版更新检查改用本仓库。
+          - 为 64 位 APK 修复 16 KB 内存页对齐，并在发版时校验 APK 对应的源码提交。
+
+          ## 安装与升级
+          - 已安装本仓库 v1.4.4 的用户可用同架构 APK 覆盖升级。来自其他签名的版本不能直接覆盖。
+          - 升级后，旧版缓存的远程规则集需要刷新一次。依赖规则集的配置请等刷新成功后再启动。
+          - 本次只发布 GitHub APK，附带 SHA-256 校验文件。sing-box 内核版本保持不变。
+
+          Source: $RELEASE_SHA
+          NOTES
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,body > draft.json 2>/dev/null; then
+            test "$(jq -r '.isDraft' draft.json)" = true
+            jq -r '.body' draft.json | grep -Fx "Source: $RELEASE_SHA"
+          else
+            gh release create "$TAG" release-artifacts/*.apk release-artifacts/SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "NekoBox v1.4.5" --notes-file release-notes.md
+          fi
+          mkdir uploaded
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir uploaded
+          test "$(find uploaded -maxdepth 1 -type f | wc -l)" -eq 5
+          cmp release-artifacts/SHA256SUMS.txt uploaded/SHA256SUMS.txt
+          (cd uploaded && sha256sum --check SHA256SUMS.txt)
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh api "$gh_api/releases/tags/$TAG" --jq '{tag_name, draft, prerelease, html_url, assets: [.assets[].name]}' > published.json
+          jq -e --arg tag "$TAG" '.tag_name == $tag and (.draft | not) and (.prerelease | not) and (.assets | length == 5)' published.json
+          cat published.json
