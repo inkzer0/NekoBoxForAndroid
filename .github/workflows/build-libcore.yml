@@ -12,12 +12,18 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Hash tracked native inputs
+        id: inputs
+        run: |
+          input_sha=$(git ls-tree -r HEAD -- libcore buildScript run .github/workflows/build-libcore.yml | sha256sum | cut -d' ' -f1)
+          test "${#input_sha}" -eq 64
+          printf 'sha=%s\n' "$input_sha" >> "$GITHUB_OUTPUT"
       - name: Cache native library for pinned inputs
         id: cache
         uses: actions/cache@v4
         with:
           path: app/libs/libcore.aar
-          key: ${{ runner.os }}-${{ runner.arch }}-libcore-r28-${{ hashFiles('libcore/**', 'buildScript/**', 'run') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-libcore-r28-${{ steps.inputs.outputs.sha }}
       - uses: actions/setup-go@v5
         if: steps.cache.outputs.cache-hit != 'true'
         with:
