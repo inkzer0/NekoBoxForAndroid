@@ -1,0 +1,47 @@
+name: Build pinned native library
+on:
+  workflow_call:
+permissions:
+  contents: read
+
+jobs:
+  libcore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Hash tracked native inputs
+        id: inputs
+        run: |
+          input_sha=$(git ls-tree -r HEAD -- libcore buildScript run .github/workflows/build-libcore.yml | sha256sum | cut -d' ' -f1)
+          test "${#input_sha}" -eq 64
+          printf 'sha=%s\n' "$input_sha" >> "$GITHUB_OUTPUT"
+      - name: Cache native library for pinned inputs
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: app/libs/libcore.aar
+          key: ${{ runner.os }}-${{ runner.arch }}-libcore-r28-${{ steps.inputs.outputs.sha }}
+      - uses: actions/setup-go@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          go-version: '1.25.5'
+          cache-dependency-path: libcore/go.sum
+      - uses: actions/setup-java@v4
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install pinned NDK and build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          source buildScript/init/android_toolchain.properties
+          bash buildScript/init/install_android_packages.sh "ndk;$NDK_VERSION"
+          ./run lib core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinned-libcore
+          path: app/libs/libcore.aar
+          if-no-files-found: error

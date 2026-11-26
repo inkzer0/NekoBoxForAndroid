@@ -18,3 +18,9 @@ sing-box v1.14.0. Run in an isolated copy alongside the existing `compat_host_te
 file list and `dns_callback_test.go`, selecting the platform-specific replacement helper.
 Set `NEKO_GEO_ASSETS` to the verified GeoIP/GeoSite asset directory and
 `NEKO_CONFIG_FIXTURES` to the 37 actual ConfigBuilder fixtures. Do not patch the official Core.
+
+The **Release Build** workflow's optional `validate` mode builds the pinned
+native AAR, runs the app JVM tests, and checks ELF/ZIP 16 KB alignment in unsigned
+OSS APKs. It skips the release tag and signing credentials and cannot publish.
+Normal release mode instead requires an existing `v<version>` tag pointing to
+the exact workflow commit, and verifies the signed final package before upload.

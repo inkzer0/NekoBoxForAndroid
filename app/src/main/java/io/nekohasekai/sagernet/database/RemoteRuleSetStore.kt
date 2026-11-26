@@ -5,12 +5,30 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.URI
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
 
 /** Subscription data and cache operations, independent of Android networking. */
 object RemoteRuleSetStore {
     fun tags(value: String): List<String> = value.lineSequence().filter { it.isNotBlank() }.distinct().toList()
+
+    /** A stable watcher path for this exact source, without embedding the possibly secret URL. */
+    fun cacheName(entity: RemoteRuleSetEntity): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(entity.url.toByteArray(Charsets.UTF_8))
+        val encoded = buildString(2 * digest.size) {
+            val hex = "0123456789abcdef"
+            digest.forEach { byte ->
+                val value = byte.toInt() and 0xff
+                append(hex[value shr 4])
+                append(hex[value and 0x0f])
+            }
+        }
+        return "${entity.id}-$encoded.${entity.format}"
+    }
+
+    fun sameSource(before: RemoteRuleSetEntity, after: RemoteRuleSetEntity): Boolean =
+        before.id == after.id && before.url == after.url && before.format == after.format
 
     fun validate(entity: RemoteRuleSetEntity) {
         require(entity.id >= 0 && entity.name.isNotBlank()) { "Invalid rule-set name or ID" }

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source buildScript/init/env_ndk.sh
+source buildScript/init/env_ndk.sh || exit 1
 
 if [[ "$OSTYPE" =~ ^darwin ]]; then
   export SRC_ROOT=$PWD

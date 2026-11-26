@@ -37,6 +37,7 @@ type HTTPClient interface {
 	PinnedTLS12()
 	PinnedSHA256(sumHex string)
 	TrySocks5(port int32)
+	RequireSocks5(port int32)
 	TryH3Direct()
 	KeepAlive()
 	NewRequest() HTTPRequest
@@ -72,6 +73,7 @@ type httpClient struct {
 	h1h2Transport http.Transport
 	h1h2Client    http.Client
 	trySocks5     bool
+	requireSocks5 bool
 	tryH3Direct   bool
 }
 
@@ -115,24 +117,28 @@ func (c *httpClient) PinnedSHA256(sumHex string) {
 }
 
 func (c *httpClient) TrySocks5(port int32) {
+	c.configureSocks5(port)
+}
+
+func (c *httpClient) RequireSocks5(port int32) {
+	c.requireSocks5 = true
+	c.configureSocks5(port)
+}
+
+func (c *httpClient) configureSocks5(port int32) {
 	dialer := new(net.Dialer)
+	proxyAddress := net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port)))
 	c.h1h2Transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		for {
-			socksConn, err := dialer.DialContext(ctx, "tcp", "127.0.0.1:"+strconv.Itoa(int(port)))
-			if err != nil {
-				if c.tryH3Direct {
-					return nil, errFailConnectSocks5
-				}
-				break
-			}
+		socksConn, err := dialer.DialContext(ctx, "tcp", proxyAddress)
+		if err == nil {
 			_, err = socks.ClientHandshake5(socksConn, socks5.CommandConnect, metadata.ParseSocksaddr(addr), "", "")
-			if err != nil {
-				if c.tryH3Direct {
-					return nil, errFailConnectSocks5
-				}
-				break
+			if err == nil {
+				return socksConn, nil
 			}
-			return socksConn, err
+			_ = socksConn.Close()
+		}
+		if c.requireSocks5 || c.tryH3Direct {
+			return nil, errFailConnectSocks5
 		}
 		return dialer.DialContext(ctx, network, addr)
 	}
@@ -209,13 +215,16 @@ func (r *httpRequest) SetContentString(content string) {
 func (r *httpRequest) Execute() (HTTPResponse, error) {
 	defer device.DeferPanicToError("http execute", func(err error) { log.Println(err) })
 	// full direct
-	if r.tryH3Direct && !r.trySocks5 {
+	if !r.requireSocks5 && r.tryH3Direct && !r.trySocks5 {
 		return r.doH3Direct()
 	}
 	response, err := r.h1h2Client.Do(&r.request)
 	if err != nil {
+		if r.requireSocks5 && errors.Is(err, errFailConnectSocks5) {
+			return nil, errFailConnectSocks5
+		}
 		// trySocks5 && tryH3Direct
-		if r.tryH3Direct && errors.Is(err, errFailConnectSocks5) {
+		if !r.requireSocks5 && r.tryH3Direct && errors.Is(err, errFailConnectSocks5) {
 			return r.doH3Direct()
 		}
 		return nil, err

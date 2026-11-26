@@ -62,7 +62,7 @@ class RemoteRuleSetsDialog : DialogFragment() {
         MaterialAlertDialogBuilder(requireContext()).setTitle(e.name).setItems(choices) { _, index ->
             when (index) {
                 0 -> editor(e.id)
-                1 -> operation { RemoteRuleSetManager.update(e.id) }
+                1 -> operation(firstDownload = e) { RemoteRuleSetManager.update(e.id) }
                 2 -> operation { RemoteRuleSetManager.save(e.copy(enabled = !e.enabled)) }
                 3 -> MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.ruleset_delete)
                     .setMessage(e.name).setPositiveButton(android.R.string.ok) { _, _ -> operation { RemoteRuleSetManager.delete(e.id) } }
@@ -71,11 +71,17 @@ class RemoteRuleSetsDialog : DialogFragment() {
         }.show()
     }
 
-    private fun operation(block: () -> Unit) {
+    private fun operation(firstDownload: RemoteRuleSetEntity? = null, block: () -> Unit) {
         lifecycleScope.launch {
-            val failure = withContext(Dispatchers.IO) { runCatching(block).exceptionOrNull() }
+            val (failure, nowUsable) = withContext(Dispatchers.IO) {
+                val withoutCache = firstDownload?.takeIf { it.enabled && RemoteRuleSetManager.updated(it) == 0L }
+                val failure = runCatching(block).exceptionOrNull()
+                failure to (failure == null && withoutCache != null && RemoteRuleSetManager.updated(withoutCache) > 0L)
+            }
             if (isAdded) {
-                Toast.makeText(requireContext(), failure?.message ?: getString(R.string.ruleset_done), Toast.LENGTH_LONG).show()
+                val success = if (nowUsable && DataStore.serviceState.started) R.string.ruleset_refresh_restart
+                    else R.string.ruleset_done
+                Toast.makeText(requireContext(), failure?.message ?: getString(success), Toast.LENGTH_LONG).show()
                 refresh()
             }
         }
@@ -107,6 +113,10 @@ class RemoteRuleSetEditDialog : DialogFragment() {
                 lifecycleScope.launch {
                     val failure = withContext(Dispatchers.IO) { runCatching { RemoteRuleSetManager.save(value) }.exceptionOrNull() }
                     if (failure == null) {
+                        if (isAdded && id != 0L && value.enabled && DataStore.serviceState.started &&
+                            !RemoteRuleSetStore.sameSource(entity, value)) {
+                            Toast.makeText(requireContext(), R.string.ruleset_source_changed, Toast.LENGTH_LONG).show()
+                        }
                         parentFragmentManager.setFragmentResult("rule-set-saved", Bundle())
                         dismiss()
                     } else if (isAdded) {

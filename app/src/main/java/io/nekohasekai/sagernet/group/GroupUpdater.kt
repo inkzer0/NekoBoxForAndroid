@@ -4,6 +4,7 @@ import io.nekohasekai.sagernet.*
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.GroupManager
 import io.nekohasekai.sagernet.database.ProxyGroup
+import io.nekohasekai.sagernet.database.SagerDatabase
 import io.nekohasekai.sagernet.database.SubscriptionBean
 import io.nekohasekai.sagernet.fmt.AbstractBean
 import io.nekohasekai.sagernet.fmt.http.HttpBean
@@ -27,7 +28,8 @@ abstract class GroupUpdater {
         proxyGroup: ProxyGroup,
         subscription: SubscriptionBean,
         userInterface: GroupManager.Interface?,
-        byUser: Boolean
+        byUser: Boolean,
+        requireSocks5: Boolean
     )
 
     data class Progress(
@@ -131,41 +133,47 @@ abstract class GroupUpdater {
         }
 
         suspend fun executeUpdate(proxyGroup: ProxyGroup, byUser: Boolean): Boolean {
-            return coroutineScope {
-                if (!updating.add(proxyGroup.id)) cancel()
-                GroupManager.postReload(proxyGroup.id)
+            val groupId = proxyGroup.id
+            if (!updating.add(groupId)) return false
+            var currentGroup = proxyGroup
+            val userInterface = GroupManager.userInterface
+            try {
+                GroupManager.postReload(groupId)
+                // The worker's list and the UI's group may be stale by the time the request starts.
+                currentGroup = SagerDatabase.groupDao.getById(groupId) ?: return false
+                var subscription = currentGroup.subscription ?: return false
+                val mode = subscriptionFetchMode(
+                    connectedOnly = subscription.updateWhenConnectedOnly == true,
+                    insecureHttp = subscription.link.startsWith("http://", ignoreCase = true),
+                    byUser = byUser,
+                    connected = DataStore.serviceState.connected
+                )
+                if (mode == SubscriptionFetchMode.SKIP) return false
+                var requireSocks5 = mode == SubscriptionFetchMode.PROXY_REQUIRED
+                if (mode == SubscriptionFetchMode.CONFIRM_DIRECT) {
+                    if (userInterface?.confirm(app.getString(R.string.update_subscription_warning)) != true) return false
 
-                val subscription = proxyGroup.subscription!!
-                val connected = DataStore.serviceState.connected
-                val userInterface = GroupManager.userInterface
-
-                if (byUser && (subscription.link?.startsWith("http://") == true || subscription.updateWhenConnectedOnly) && !connected) {
-                    if (userInterface == null || !userInterface.confirm(app.getString(R.string.update_subscription_warning))) {
-                        finishUpdate(proxyGroup)
-                        cancel()
-                        return@coroutineScope true
-                    }
+                    // The approval is only for this source and its current subscription settings.
+                    currentGroup = SagerDatabase.groupDao.getById(groupId) ?: return false
+                    val confirmed = currentGroup.subscription ?: return false
+                    if (!confirmed.sameRefreshInputs(subscription)) return false
+                    subscription = confirmed
+                    requireSocks5 = subscription.updateWhenConnectedOnly == true && DataStore.serviceState.connected
                 }
 
-                try {
-                    RawUpdater.doUpdate(proxyGroup, subscription, userInterface, byUser)
-                    true
-                } catch (e: Throwable) {
-                    Logs.w(e)
-                    userInterface?.onUpdateFailure(proxyGroup, e.readableMessage)
-                    finishUpdate(proxyGroup)
-                    false
-                }
+                RawUpdater.doUpdate(currentGroup, subscription, userInterface, byUser, requireSocks5)
+                return true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logs.w(e)
+                userInterface?.onUpdateFailure(currentGroup, e.readableMessage)
+                return false
+            } finally {
+                updating.remove(groupId)
+                progress.remove(groupId)
+                GroupManager.postUpdate(groupId)
             }
         }
-
-
-        suspend fun finishUpdate(proxyGroup: ProxyGroup) {
-            updating.remove(proxyGroup.id)
-            progress.remove(proxyGroup.id)
-            GroupManager.postUpdate(proxyGroup)
-        }
-
     }
-
 }
