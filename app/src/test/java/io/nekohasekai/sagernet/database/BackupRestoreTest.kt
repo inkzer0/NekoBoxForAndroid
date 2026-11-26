@@ -18,6 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.SQLiteMode
+import org.robolectric.shadows.ShadowSQLiteConnection
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class, manifest = Config.NONE)
@@ -38,6 +39,9 @@ class BackupRestoreTest {
     }
 
     @Test fun attachedSettingsAndProfileWritesRollBackTogetherAndCanBeRetried() {
+        // Match the on-device file-backed durability settings, not Robolectric's MEMORY/OFF defaults.
+        ShadowSQLiteConnection.setDefaultJournalMode("TRUNCATE")
+        ShadowSQLiteConnection.setDefaultSyncMode("FULL")
         val context = RuntimeEnvironment.getApplication()
         val db = Room.databaseBuilder(context, SagerDatabase::class.java, "backup-test-main")
             .setJournalMode(RoomDatabase.JournalMode.TRUNCATE).allowMainThreadQueries().build()
@@ -53,12 +57,13 @@ class BackupRestoreTest {
                 db.groupDao().insert(listOf(ProxyGroup(id = 2, name = "replacement")))
                 BackupRestoreTransaction.replaceSettings(db.openHelper.writableDatabase, settings)
             }
-            assertThrows(IllegalStateException::class.java) {
+            val failure = assertThrows(IllegalStateException::class.java) {
                 BackupRestoreTransaction.run(db, path) {
                     replace()
                     error("injected failure")
                 }
             }
+            assertEquals("injected failure", failure.message)
             assertEquals("original", db.groupDao().allGroups().single().name)
             assertEquals("original", preferences.keyValuePairDao()["name"]!!.string)
 
