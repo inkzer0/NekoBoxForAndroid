@@ -1,5 +1,7 @@
 name: Release Build
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -20,7 +22,7 @@ permissions:
 
 jobs:
   verify-tag:
-    if: ${{ !inputs.validate }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.validate }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,12 +35,12 @@ jobs:
 
   libcore:
     needs: verify-tag
-    if: ${{ !cancelled() && (needs.verify-tag.result == 'success' || (inputs.validate && needs.verify-tag.result == 'skipped')) }}
+    if: ${{ !cancelled() && (needs.verify-tag.result == 'success' || ((inputs.validate || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && needs.verify-tag.result == 'skipped')) }}
     uses: ./.github/workflows/build-libcore.yml
 
   validate:
     name: Test JVM and check unsigned APK alignment
-    if: ${{ inputs.validate }}
+    if: ${{ inputs.validate || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     needs: libcore
     steps:
@@ -85,7 +87,7 @@ jobs:
 
   build:
     name: Build and verify signed OSS APKs
-    if: ${{ !inputs.validate }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.validate }}
     runs-on: ubuntu-latest
     needs: libcore
     steps:
@@ -131,7 +133,7 @@ jobs:
 
   publish:
     name: Draft tag-matched GitHub release
-    if: ${{ !inputs.validate && inputs.publish != 'y' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.validate && inputs.publish != 'y' }}
     runs-on: ubuntu-latest
     needs: build
     permissions:
@@ -158,7 +160,7 @@ jobs:
 
   play:
     name: Build and verify signed Play bundle
-    if: ${{ !inputs.validate && inputs.play != 'y' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.validate && inputs.play != 'y' }}
     runs-on: ubuntu-latest
     needs: libcore
     steps:
